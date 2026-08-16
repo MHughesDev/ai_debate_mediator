@@ -1,0 +1,74 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  deploy-render:
+    # Render deploys on push to main via its deploy hook (SPEC §6.2).
+    # Set the RENDER_DEPLOY_HOOK secret (Render dashboard -> service -> Deploy Hook URL).
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK not configured — skipping deploy."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK"
+
+  deploy-cloudrun:
+    # Cloud Run cutover (SPEC §6.3/§6.4). Manual dispatch only; requires GCP secrets.
+    needs: test
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check configuration
+        id: check
+        env:
+          HAS_GCP: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT != '' && secrets.GCP_PROJECT_ID != '' }}
+        run: echo "configured=$HAS_GCP" >> "$GITHUB_OUTPUT"
+      - name: Not configured
+        if: steps.check.outputs.configured != 'true'
+        run: echo "GCP secrets missing (GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT, GCP_PROJECT_ID) — skipping Cloud Run deploy."
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.configured == 'true'
+      - uses: google-github-actions/auth@v2
+        if: steps.check.outputs.configured == 'true'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.check.outputs.configured == 'true'
+      - name: Deploy to Cloud Run
+        if: steps.check.outputs.configured == 'true'
+        run: |
+          gcloud run deploy debate-mediator \
+            --source . \
+            --project "${{ secrets.GCP_PROJECT_ID }}" \
+            --region "${{ secrets.GCP_REGION || 'us-west1' }}" \
+            --allow-unauthenticated \
+            --min-instances 1 \
+            --concurrency 80 \
+            --set-secrets "RECALL_API_KEY=RECALL_API_KEY:latest,DEEPGRAM_API_KEY=DEEPGRAM_API_KEY:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,TAVILY_API_KEY=TAVILY_API_KEY:latest,DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest"

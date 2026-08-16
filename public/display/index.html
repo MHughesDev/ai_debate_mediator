@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Debate Mediator</title>
+<link rel="stylesheet" href="./display.css" />
+</head>
+<body>
+  <main id="stage">
+    <!-- Idle / listening -->
+    <section id="view-idle" class="view active">
+      <div class="brand"><span class="pulse"></span> AI DEBATE MEDIATOR</div>
+      <div id="idle-speaker" class="speaker-name">Waiting for debate…</div>
+      <div id="idle-team" class="speaker-team"></div>
+      <div id="idle-clock" class="turn-clock"></div>
+    </section>
+
+    <!-- Fact-check card (hero state) -->
+    <section id="view-factcheck" class="view">
+      <div class="fc-label">FACT CHECK</div>
+      <blockquote id="fc-claim" class="fc-claim"></blockquote>
+      <div id="fc-speaker" class="fc-speaker"></div>
+      <div id="fc-verdict" class="fc-verdict"></div>
+      <div id="fc-evidence" class="fc-evidence"></div>
+      <div id="fc-source" class="fc-source"></div>
+    </section>
+
+    <!-- Scoreboard flash -->
+    <section id="view-scoreboard" class="view">
+      <div class="sb-label">SCOREBOARD</div>
+      <div id="sb-rows" class="sb-rows"></div>
+    </section>
+
+    <!-- Fallacy / mediator flag -->
+    <section id="view-flag" class="view">
+      <div id="flag-kind" class="flag-kind">⚑ FALLACY FLAG</div>
+      <div id="flag-label" class="flag-label"></div>
+      <div id="flag-speaker" class="flag-speaker"></div>
+      <div id="flag-detail" class="flag-detail"></div>
+    </section>
+
+    <!-- Receipts (post-debate) -->
+    <section id="view-receipts" class="view">
+      <div class="sb-label">FINAL RECEIPTS</div>
+      <div id="receipts-body" class="receipts-body"></div>
+    </section>
+
+    <!-- Persistent overlays -->
+    <div id="pending" class="pending hidden">🔍 checking <span id="pending-count">0</span> claims…</div>
+    <div id="thoughts" class="thoughts hidden"></div>
+    <div id="conn" class="conn hidden">reconnecting…</div>
+    <div id="alert" class="alert hidden"></div>
+  </main>
+  <script type="module" src="./display.js"></script>
+</body>
+</html>

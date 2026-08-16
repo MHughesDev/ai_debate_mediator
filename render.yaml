@@ -1,0 +1,25 @@
+# Render blueprint (SPEC §6.2): exactly ONE web service on the free instance
+# pool; the launcher can also be deployed as a free static site pointing at it.
+# Never use Render free Postgres / Key Value (ADR-0003) — set DATABASE_URL to
+# Neon and REDIS_URL to Upstash in the dashboard.
+services:
+  - type: web
+    name: debate-mediator
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RECALL_API_KEY
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false

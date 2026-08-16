@@ -1,0 +1,98 @@
+/* Bot camera tile: rendered small in gallery view -> one thing at a time, huge type. */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --text: #f0f6fc;
+  --muted: #8b949e;
+  --true: #3fb950;
+  --false: #f85149;
+  --misleading: #d29922;
+  --unverified: #8b949e;
+  --accent: #58a6ff;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+#stage { position: relative; width: 100vw; height: 100vh; }
+
+.view {
+  position: absolute; inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4vmin 6vmin;
+  gap: 2.2vmin;
+}
+.view.active { display: flex; }
+
+/* Idle */
+.brand { font-size: 2.6vmin; letter-spacing: 0.35em; color: var(--muted); display: flex; align-items: center; gap: 1.2vmin; }
+.pulse { width: 1.6vmin; height: 1.6vmin; border-radius: 50%; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 0.35; transform: scale(0.85);} 50% { opacity: 1; transform: scale(1.15);} }
+.speaker-name { font-size: 7vmin; font-weight: 700; }
+.speaker-team { font-size: 3.2vmin; color: var(--accent); }
+.turn-clock { font-size: 4.4vmin; color: var(--muted); font-variant-numeric: tabular-nums; }
+.turn-clock.overtime { color: var(--false); }
+
+/* Fact-check */
+.fc-label { font-size: 2.4vmin; letter-spacing: 0.35em; color: var(--muted); }
+.fc-claim { font-size: 4.6vmin; font-weight: 600; line-height: 1.25; max-width: 90%; }
+.fc-claim::before { content: "“"; color: var(--muted); }
+.fc-claim::after { content: "”"; color: var(--muted); }
+.fc-speaker { font-size: 2.6vmin; color: var(--muted); }
+.fc-verdict { font-size: 7.5vmin; font-weight: 800; padding: 0.6vmin 3.5vmin; border-radius: 1.6vmin; }
+.fc-verdict.TRUE { color: #04120a; background: var(--true); }
+.fc-verdict.FALSE { color: #160404; background: var(--false); }
+.fc-verdict.MISLEADING { color: #171001; background: var(--misleading); }
+.fc-verdict.UNVERIFIABLE, .fc-verdict.UNVERIFIED { color: var(--bg); background: var(--unverified); }
+.fc-evidence { font-size: 3.1vmin; color: var(--text); max-width: 85%; line-height: 1.3; }
+.fc-source { font-size: 2.4vmin; color: var(--accent); }
+
+/* Scoreboard */
+.sb-label { font-size: 2.4vmin; letter-spacing: 0.35em; color: var(--muted); }
+.sb-rows { display: flex; flex-direction: column; gap: 2.6vmin; width: 86%; }
+.sb-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2vmin; }
+.sb-name { font-size: 4vmin; font-weight: 700; text-align: left; }
+.sb-team { font-size: 2.2vmin; color: var(--muted); text-align: left; }
+.sb-total { font-size: 5.4vmin; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sb-bar { grid-column: 1 / -1; height: 1.6vmin; border-radius: 1vmin; background: var(--panel); overflow: hidden; }
+.sb-bar > div { height: 100%; background: var(--accent); transition: width 600ms ease; }
+
+/* Flags */
+.flag-kind { font-size: 2.6vmin; letter-spacing: 0.3em; color: var(--misleading); }
+.flag-label { font-size: 6vmin; font-weight: 800; }
+.flag-speaker { font-size: 3vmin; color: var(--muted); }
+.flag-detail { font-size: 2.8vmin; max-width: 80%; color: var(--text); }
+
+/* Receipts */
+.receipts-body { font-size: 3vmin; display: flex; flex-direction: column; gap: 1.6vmin; max-width: 90%; }
+.receipts-body .line strong { color: var(--accent); }
+
+/* Overlays */
+.pending {
+  position: absolute; top: 2.4vmin; right: 2.6vmin;
+  font-size: 2.2vmin; color: var(--muted);
+  background: rgba(22, 27, 34, 0.85); padding: 1vmin 1.8vmin; border-radius: 999px;
+}
+.thoughts {
+  position: absolute; bottom: 2.4vmin; left: 2.6vmin; right: 2.6vmin;
+  font-size: 2vmin; color: var(--muted); font-style: italic; text-align: left;
+}
+.conn {
+  position: absolute; top: 2.4vmin; left: 2.6vmin;
+  font-size: 2vmin; color: var(--misleading);
+  background: rgba(22, 27, 34, 0.85); padding: 1vmin 1.8vmin; border-radius: 999px;
+}
+.alert {
+  position: absolute; bottom: 8vmin; left: 50%; transform: translateX(-50%);
+  font-size: 2.4vmin; color: var(--false);
+  background: rgba(22, 27, 34, 0.92); padding: 1.2vmin 2.4vmin; border-radius: 1vmin;
+}
+.hidden { display: none !important; }

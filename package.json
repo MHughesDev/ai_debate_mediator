@@ -1,0 +1,24 @@
+{
+  "name": "ai-debate-mediator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI debate mediator bot: joins video calls, fact-checks claims live, scores debaters, displays via its camera tile",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test \"test/*.test.js\"",
+    "simulate": "node scripts/simulate.js",
+    "loadtest": "node scripts/loadtest.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
+    "express": "^4.21.2",
+    "ioredis": "^5.4.2",
+    "pg": "^8.13.1",
+    "ws": "^8.18.0"
+  }
+}
