@@ -8,7 +8,7 @@ import http from 'node:http';
 import { planQueries } from '../src/search/queryPlanner.js';
 import { rrfFuse, capPerDomain } from '../src/search/fusion.js';
 import { extractArticle, normalizeDate } from '../src/search/extract.js';
-import { chunkPassages, rankPassages, recencyFactor } from '../src/search/rank.js';
+import { chunkPassages, evidenceDate, rankPassages, recencyFactor } from '../src/search/rank.js';
 import { canonicalUrl, dedupeKey, domainAuthority, extractEntities, extractNumbers, fold } from '../src/search/text.js';
 import { createSearchEngine } from '../src/search/engine.js';
 import { createRateLimiter, QuotaSkip } from '../src/search/rateLimiter.js';
@@ -531,4 +531,52 @@ test('Brave quota is metered per process, not per session', async () => {
     'the second session sees what the first session already spent',
   );
   _resetBraveLimiterForTests();
+});
+
+// ------------------------------------------------------- evidence currency
+//
+// Regression cover for a defect found by benchmarking, not by testing: living
+// documents report their CREATION date as datePublished. Wikipedia's
+// "Unemployment" article advertises 2001 while carrying current figures, so
+// judging its age by that date penalized the freshest sources hardest — and a
+// page with no date at all scored better than one we parsed correctly.
+
+test('a body <time> is content, not a publication date', () => {
+  // The date in this table belongs to the subject matter. Reading it as the
+  // page date is how an article about 2016 ends up stamped 2012.
+  const html = `<html><head><title>Unemployment</title></head><body>
+    <article><p>${'Employment statistics and analysis. '.repeat(12)}</p>
+    <table><tr><td><time datetime="2012-06-16">16 June 2012</time></td><td>4.1%</td></tr></table>
+    </article></body></html>`;
+  const article = extractArticle(html, 'https://example.org/unemployment');
+  assert.equal(article.publishedAt, null, 'a date inside the content is not claimed as the page date');
+});
+
+test('extractor reads when a living document was last updated', () => {
+  const html = `<html><head><title>Unemployment</title>
+    <script type="application/ld+json">
+      {"datePublished":"2001-03-19T19:13:03Z","dateModified":"2026-08-10T16:45:16Z"}
+    </script></head>
+    <body><article><p>${'Current unemployment figures and analysis. '.repeat(12)}</p></article></body></html>`;
+  const article = extractArticle(html, 'https://example.org/unemployment');
+  assert.match(article.publishedAt, /^2001-03-19/, 'creation date still reported');
+  assert.match(article.updatedAt, /^2026-08-10/, 'and so is the date the content was last current');
+});
+
+test('a kept-current source is not aged out by its creation date', () => {
+  const living = { publishedAt: '2001-03-19T00:00:00Z', updatedAt: new Date(Date.now() - 30 * 864e5).toISOString() };
+  const stale = { publishedAt: '2001-03-19T00:00:00Z', updatedAt: null };
+
+  assert.equal(evidenceDate(living), living.updatedAt, 'the freshest signal wins');
+  assert.equal(evidenceDate(stale), '2001-03-19T00:00:00.000Z');
+  assert.equal(evidenceDate({}), null, 'no dates at all stays null rather than guessing');
+
+  // On a time-sensitive claim this is the difference between a boost and a penalty.
+  const boosted = recencyFactor(evidenceDate(living), true);
+  const penalized = recencyFactor(evidenceDate(stale), true);
+  assert.ok(boosted > 1, 'a page updated last month reads as current evidence');
+  assert.ok(penalized < 1, 'a genuinely stale page is still discounted');
+  // The bug being guarded against: an undated page used to outrank a correctly
+  // parsed, freshly updated one.
+  assert.ok(boosted > recencyFactor(null, true), 'and it beats a page with no date at all');
 });

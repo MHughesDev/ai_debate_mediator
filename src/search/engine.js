@@ -129,6 +129,10 @@ export function createSearchEngine({ config, backends: injectedBackends, fetchIm
         domain,
         text: article.text,
         publishedAt: article.publishedAt || meta.publishedAt || null,
+        // The backend's own date (a Wikipedia revision timestamp, Brave's page
+        // age) is evidence of currency too, so it counts as an update signal
+        // rather than being overridden by the page's creation date.
+        updatedAt: article.updatedAt || meta.publishedAt || null,
         authority: meta.authority ?? domainAuthority(domain),
       });
     }
@@ -161,6 +165,7 @@ export function createSearchEngine({ config, backends: injectedBackends, fetchIm
       url: p.url,
       snippet: p.text,
       publishedAt: p.publishedAt,
+      updatedAt: p.updatedAt || null,
       domain: p.domain,
       score: +p.score.toFixed(4),
     }));

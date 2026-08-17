@@ -134,7 +134,7 @@ export function rankPassages(docs, { claim, plan, maxPassages = 6, maxPerDomain 
 
     const doc = entry.doc;
     const authority = doc.authority ?? domainAuthority(doc.domain);
-    const recency = recencyFactor(doc.publishedAt, plan?.timeSensitive);
+    const recency = recencyFactor(evidenceDate(doc), plan?.timeSensitive);
 
     candidates.push({
       text: entry.text,
@@ -142,6 +142,7 @@ export function rankPassages(docs, { claim, plan, maxPassages = 6, maxPerDomain 
       title: doc.title,
       domain: doc.domain,
       publishedAt: doc.publishedAt || null,
+      updatedAt: doc.updatedAt || null,
       score: base * boost * (0.35 + 0.9 * coverage) * (0.55 + 0.45 * authority) * recency,
       signals: {
         bm25: +base.toFixed(3),
@@ -188,6 +189,18 @@ function keyPhrases(claim) {
   return out.slice(0, 8);
 }
 
+// How current the evidence is, which is the freshest of the two dates a page
+// gives us. A living document (an encyclopedia entry, a statistics page) reports
+// its creation date as datePublished while its content is kept up to date, so
+// judging it by that date alone treats the freshest sources as the oldest.
+export function evidenceDate(doc) {
+  const dates = [doc?.updatedAt, doc?.publishedAt]
+    .map((d) => (d ? new Date(d).getTime() : NaN))
+    .filter((t) => Number.isFinite(t));
+  if (!dates.length) return null;
+  return new Date(Math.max(...dates)).toISOString();
+}
+
 // Fresh sources matter for "currently/record/latest" claims and matter much
 // less for settled physical facts, so recency only bites when time-sensitive.
 export function recencyFactor(publishedAt, timeSensitive) {
@@ -213,6 +226,7 @@ export function rankSnippets(results, { claim, plan, maxPassages = 4 } = {}) {
         domain: r.domain,
         text: r.snippet,
         publishedAt: r.publishedAt,
+        updatedAt: r.updatedAt,
         authority: r.authority,
       })),
     { claim, plan, maxPassages, maxPerDomain: 1 },

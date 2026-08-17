@@ -191,3 +191,44 @@ test('phase4: verifier emits honest UNVERIFIED when judging fails', async (t) =>
   assert.equal(card.sources.length, 0);
   ws.close();
 });
+
+test('phase4: the judge is told the motion, so underspecified claims have context', async (t) => {
+  const srv = await setupTestServer();
+  t.after(() => srv.close());
+  const session = await createTestSession(srv.baseUrl, {
+    motion: 'This house believes the United States economy has recovered',
+    config: { preset: 'oxford' },
+    speakers: [{ name: 'Alex Rivera', team: 'P' }],
+  });
+
+  const { addClaim } = await import('../src/pipeline/argumentGraph.js');
+  const { startVerifier, enqueueVerification } = await import('../src/pipeline/verifier.js');
+  // Underspecified on its own: no country, no date. Keyword search will happily
+  // return another country's statistics, so the judge needs the motion to know
+  // what is being claimed — otherwise correct evidence about the wrong place
+  // reads as support.
+  const claim = await addClaim(session.id, {
+    text: 'Unemployment is at a record low.',
+    speaker: 'Alex Rivera',
+    type: 'factual',
+    checkable: true,
+  });
+
+  let seen = null;
+  const verifier = startVerifier(session.id, {
+    llm: {
+      async judgeClaim(args) {
+        seen = args;
+        return { verdict: 'UNVERIFIABLE', confidence: 0.4, evidence_summary: 'Scope unclear.', sources: [] };
+      },
+    },
+    searchProvider: createMockSearchProvider({ latencyMs: 5 }),
+    sessionConfig: {},
+  });
+  t.after(() => verifier.stop());
+  await enqueueVerification(session.id, claim.id);
+
+  await waitFor(() => seen !== null, { timeoutMs: 10000 });
+  assert.equal(seen.motion, 'This house believes the United States economy has recovered');
+  assert.equal(seen.claim.text, 'Unemployment is at a record low.');
+});

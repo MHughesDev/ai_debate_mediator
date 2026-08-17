@@ -13,7 +13,7 @@ const BLOCK_TAGS = 'p|li|td|th|h1|h2|h3|h4|h5|h6|blockquote|dd|dt|figcaption|pre
 
 export function extractArticle(html, url = '') {
   if (!html || typeof html !== 'string') {
-    return { title: '', text: '', publishedAt: null, siteName: '', canonical: url };
+    return { title: '', text: '', publishedAt: null, updatedAt: null, siteName: '', canonical: url };
   }
 
   const meta = readMeta(html);
@@ -52,6 +52,7 @@ export function extractArticle(html, url = '') {
     title: meta.title,
     text,
     publishedAt: meta.publishedAt,
+    updatedAt: meta.updatedAt,
     siteName: meta.siteName,
     canonical: meta.canonical || url,
   };
@@ -59,6 +60,10 @@ export function extractArticle(html, url = '') {
 
 function readMeta(html) {
   const head = html.slice(0, 60000); // metadata always lives near the top
+  // For elements that also occur in body content we need the real boundary:
+  // a 60KB prefix still swallows the whole body of a short page.
+  const headEnd = html.search(/<\/head\s*>/i);
+  const headOnly = headEnd > 0 ? html.slice(0, headEnd) : html.slice(0, 4000);
   const title =
     metaContent(head, 'property', 'og:title') ||
     metaContent(head, 'name', 'twitter:title') ||
@@ -70,12 +75,28 @@ function readMeta(html) {
     metaContent(head, 'itemprop', 'datePublished') ||
     metaContent(head, 'name', 'pubdate') ||
     metaContent(head, 'name', 'date') ||
-    firstMatch(html, /<time\b[^>]*datetime=["']([^"']+)["']/i) ||
-    firstMatch(html, /"datePublished"\s*:\s*"([^"]+)"/i);
+    // Scoped to the head: a <time> in the body belongs to the CONTENT (a date
+    // inside a table or infobox), not to the page, and reading it as the
+    // publication date silently corrupts recency scoring.
+    firstMatch(headOnly, /<time\b[^>]*datetime=["']([^"']+)["']/i) ||
+    firstMatch(head, /"datePublished"\s*:\s*"([^"]+)"/i);
+
+  // When the content was last current — a different question from when the page
+  // was first created. Living documents report creation as datePublished:
+  // Wikipedia's "Unemployment" article says 2001 while its figures are current.
+  // Treating that as the age of the evidence penalizes the freshest sources
+  // hardest, which is exactly backwards.
+  const rawUpdated =
+    metaContent(head, 'property', 'article:modified_time') ||
+    metaContent(head, 'property', 'og:updated_time') ||
+    metaContent(head, 'itemprop', 'dateModified') ||
+    metaContent(head, 'name', 'lastmod') ||
+    firstMatch(html, /"dateModified"\s*:\s*"([^"]+)"/i);
 
   return {
     title: title || '',
     publishedAt: normalizeDate(rawDate),
+    updatedAt: normalizeDate(rawUpdated),
     siteName: metaContent(head, 'property', 'og:site_name') || '',
     canonical:
       firstMatch(head, /<link\b[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["']/i) ||

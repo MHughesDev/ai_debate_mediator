@@ -84,6 +84,11 @@ export function startVerifier(sessionId, { llm, searchProvider, concurrency = co
     const claim = await getClaim(sessionId, claimId);
     if (!claim) return;
     try {
+      // The motion is what disambiguates a claim that is underspecified on its
+      // own. "Unemployment is at a record low" is about whichever country the
+      // debate is about, and without that the judge can be handed correct
+      // evidence about the wrong place and call the claim TRUE.
+      const motion = (await getSession(sessionId))?.motion || '';
       await publishEvent(sessionId, 'thought', { text: `searching: “${claim.text.slice(0, 80)}”…` });
       // Providers that plan their own queries (our engine) get the raw claim
       // once; simple providers get hand-built variants for recall.
@@ -108,7 +113,7 @@ export function startVerifier(sessionId, { llm, searchProvider, concurrency = co
 
       await publishEvent(sessionId, 'thought', { text: `comparing ${results.length} sources…` });
       const rawVerdict = await withTimeout(
-        llm.judgeClaim({ sessionId, claim, results }),
+        llm.judgeClaim({ sessionId, claim, results, motion }),
         config.verifyTimeoutMs,
         'judge',
       );

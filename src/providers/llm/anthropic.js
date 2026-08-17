@@ -139,7 +139,7 @@ export function createAnthropicLlm() {
       return result || { claims: [], fallacies: [] };
     },
 
-    async judgeClaim({ sessionId, claim, results }) {
+    async judgeClaim({ sessionId, claim, results, motion }) {
       const resultsText = (results || [])
         .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`)
         .join('\n\n');
@@ -153,8 +153,15 @@ export function createAnthropicLlm() {
           'Verdicts: TRUE (results clearly support it), FALSE (results clearly contradict it), MISLEADING (technically partial truth that creates a wrong impression), ' +
           'UNVERIFIABLE (results cannot settle it). confidence is 0-1 and must reflect the strength of the evidence; a FALSE verdict shown on screen is the worst possible ' +
           'failure mode, so only assign FALSE with high confidence and contradicting sources. evidence_summary is ONE display-ready sentence. ' +
-          'sources must reference only URLs from the results that actually informed the verdict.',
-        prompt: `Claim by ${claim.speaker}: "${claim.text}"\n\nSearch results:\n${resultsText || '(no results found)'}`,
+          'sources must reference only URLs from the results that actually informed the verdict. ' +
+          'SCOPE: evidence about a different country, organisation, population or time period than the claim is NOT evidence for it. ' +
+          'Search is keyword-based, so results often describe a similar-sounding but different subject - a claim about unemployment ' +
+          'answered by statistics for a different country, for instance. Use the debate motion to resolve what an underspecified claim refers to. ' +
+          'If the claim is too underspecified to pin down, or the results concern a different subject, return UNVERIFIABLE and say so ' +
+          'in one sentence. Never stretch evidence to fit.',
+        prompt:
+          `Debate motion: ${motion || '(none provided)'}\n` +
+          `Claim by ${claim.speaker}: "${claim.text}"\n\nSearch results:\n${resultsText || '(no results found)'}`,
         schema: JUDGE_SCHEMA,
       });
       return result || { verdict: 'UNVERIFIABLE', confidence: 0, evidence_summary: 'Verification unavailable.', sources: [] };
