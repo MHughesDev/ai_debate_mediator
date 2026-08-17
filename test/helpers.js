@@ -43,6 +43,25 @@ export async function createTestSession(baseUrl, body = {}) {
   return res.json();
 }
 
+// Open a WS client and resolve only after the server's hello — so no events
+// published after this point can be missed by the test.
+export async function openEventCollector(wsUrl, sessionId, role = 'dashboard') {
+  const { default: WebSocket } = await import('ws');
+  const ws = new WebSocket(`${wsUrl}/ws?session=${sessionId}&role=${role}`);
+  const events = [];
+  ws.on('message', (d) => events.push(JSON.parse(d.toString())));
+  await new Promise((resolve, reject) => {
+    ws.on('error', reject);
+    const check = setInterval(() => {
+      if (events.some((e) => e.type === 'hello')) {
+        clearInterval(check);
+        resolve();
+      }
+    }, 10);
+  });
+  return { ws, events };
+}
+
 export function waitFor(predicate, { timeoutMs = 5000, intervalMs = 25 } = {}) {
   return new Promise((resolve, reject) => {
     const start = Date.now();

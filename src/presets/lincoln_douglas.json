@@ -1,0 +1,24 @@
+{
+  "format_id": "lincoln_douglas",
+  "label": "Lincoln–Douglas",
+  "description": "1v1, strict alternating clocks, logic and responsiveness weighted",
+  "turns": {
+    "structure": [
+      { "label": "Affirmative Constructive", "team": "Affirmative", "seconds": 360 },
+      { "label": "Cross-Examination — Negative", "team": "Negative", "seconds": 180 },
+      { "label": "Negative Constructive", "team": "Negative", "seconds": 420 },
+      { "label": "Cross-Examination — Affirmative", "team": "Affirmative", "seconds": 180 },
+      { "label": "First Affirmative Rebuttal", "team": "Affirmative", "seconds": 240 },
+      { "label": "Negative Rebuttal", "team": "Negative", "seconds": 360 },
+      { "label": "Second Affirmative Rebuttal", "team": "Affirmative", "seconds": 180 }
+    ],
+    "seconds_per_turn": 360,
+    "enforce": true
+  },
+  "rubric": { "accuracy": 0.2, "evidence": 0.2, "logic": 0.35, "responsiveness": 0.25 },
+  "scoring_visibility": "live",
+  "factcheck": { "mode": "major_claims", "false_verdict_min_confidence": 0.85 },
+  "mediator": { "strictness": "strict", "fallacy_flags": true, "dodge_detection": true },
+  "personality": "neutral",
+  "display": { "rotation": ["factcheck", "scoreboard", "turnclock"], "receipts": true }
+}

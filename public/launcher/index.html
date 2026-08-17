@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Debate Mediator — Launcher</title>
+<link rel="stylesheet" href="./launcher.css" />
+</head>
+<body>
+  <main>
+    <h1>🎙️ AI Debate Mediator</h1>
+    <p class="tag">Paste a meeting link, pick a format, send the bot. Zero installs for participants.</p>
+
+    <form id="form">
+      <label>Meeting link
+        <input id="meetingUrl" type="url" placeholder="https://zoom.us/j/… or meet.google.com/…" required />
+      </label>
+
+      <label>Format preset
+        <select id="preset"></select>
+      </label>
+      <p id="preset-desc" class="muted"></p>
+
+      <details>
+        <summary>Dial overrides</summary>
+        <div class="grid">
+          <label>Scoring visibility
+            <select id="dial-visibility">
+              <option value="">(preset default)</option>
+              <option value="live">Live</option>
+              <option value="end">Revealed at end</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          <label>Fact-check mode
+            <select id="dial-factcheck">
+              <option value="">(preset default)</option>
+              <option value="conservative">Conservative</option>
+              <option value="major_claims">Major claims</option>
+              <option value="aggressive">Aggressive</option>
+            </select>
+          </label>
+          <label>FALSE confidence bar
+            <input id="dial-falsebar" type="number" min="0.5" max="1" step="0.01" placeholder="0.85" />
+          </label>
+          <label>Fallacy flags
+            <select id="dial-fallacy">
+              <option value="">(preset default)</option>
+              <option value="true">On</option>
+              <option value="false">Off</option>
+            </select>
+          </label>
+          <label>Dodge detection
+            <select id="dial-dodge">
+              <option value="">(preset default)</option>
+              <option value="true">On</option>
+              <option value="false">Off</option>
+            </select>
+          </label>
+        </div>
+      </details>
+
+      <label>Motion (optional)
+        <input id="motion" type="text" placeholder="This house believes…" />
+      </label>
+
+      <fieldset>
+        <legend>Speakers &amp; teams</legend>
+        <div id="speakers"></div>
+        <button type="button" id="add-speaker" class="ghost">+ Add speaker</button>
+        <p class="muted">Names must match participants' display names in the call.</p>
+      </fieldset>
+
+      <button id="send" type="submit">Send bot 🤖</button>
+      <div id="status" class="status"></div>
+    </form>
+
+    <section id="result" class="hidden">
+      <h2>Bot dispatched</h2>
+      <div class="links">
+        <a id="link-dashboard" target="_blank">Host dashboard</a>
+        <a id="link-display" target="_blank">Bot display page</a>
+        <a id="link-stage" target="_blank">Stage mode</a>
+      </div>
+      <p class="muted">The display page is what the bot shows as its camera in the call.</p>
+    </section>
+  </main>
+  <script src="./launcher.js"></script>
+</body>
+</html>

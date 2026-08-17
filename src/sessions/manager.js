@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { getStore } from '../state/store.js';
 import { getDb } from '../db/postgres.js';
 import { publishEvent, getLastSeq } from './events.js';
+import { resolveSessionConfig } from '../presets/index.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 
@@ -15,10 +16,12 @@ export async function createSession({ meetingUrl, config: sessionConfig = {}, sp
   const id = randomUUID().slice(0, 8);
   const store = await getStore();
   const db = await getDb();
+  // {preset, overrides} (or {}) -> full effective config via the preset system.
+  const resolved = resolveSessionConfig(sessionConfig);
   const meta = {
     id,
     meetingUrl,
-    config: sessionConfig,
+    config: resolved,
     speakers,
     motion,
     status: 'created',

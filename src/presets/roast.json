@@ -1,0 +1,20 @@
+{
+  "format_id": "roast",
+  "label": "Debate Night / Roast",
+  "description": "Loose rounds, live leaderboard, aggressive fact-checking, witty tone",
+  "turns": {
+    "structure": [
+      { "label": "Round 1", "team": null, "seconds": 300 },
+      { "label": "Round 2", "team": null, "seconds": 300 },
+      { "label": "Lightning Round", "team": null, "seconds": 180 }
+    ],
+    "seconds_per_turn": 300,
+    "enforce": false
+  },
+  "rubric": { "accuracy": 0.35, "evidence": 0.2, "logic": 0.2, "responsiveness": 0.25 },
+  "scoring_visibility": "live",
+  "factcheck": { "mode": "aggressive", "false_verdict_min_confidence": 0.85 },
+  "mediator": { "strictness": "loose", "fallacy_flags": true, "dodge_detection": true },
+  "personality": "witty",
+  "display": { "rotation": ["factcheck", "scoreboard"], "receipts": true }
+}

@@ -80,6 +80,7 @@ test('phase2 e2e: false claim -> FALSE card with source; full pipeline works', a
   t.after(() => srv.close());
   const session = await createTestSession(srv.baseUrl, {
     motion: 'Ban gasoline car sales by 2035',
+    config: { preset: 'oxford' }, // fallacy flags on, FALSE bar 0.85
     speakers: [
       { name: 'Alex Rivera', team: 'Proposition' },
       { name: 'Jordan Blake', team: 'Opposition' },

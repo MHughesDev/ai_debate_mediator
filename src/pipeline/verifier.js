@@ -11,7 +11,7 @@
 import { getStore } from '../state/store.js';
 import { getClaim, setClaimVerdict } from './argumentGraph.js';
 import { publishEvent } from '../sessions/events.js';
-import { setStateSlice } from '../sessions/manager.js';
+import { setStateSlice, getSession } from '../sessions/manager.js';
 import { recordSearch } from './costMeter.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
@@ -107,7 +107,9 @@ export function startVerifier(sessionId, { llm, searchProvider, concurrency = co
         config.verifyTimeoutMs,
         'judge',
       );
-      const gated = gateVerdict(rawVerdict, sessionConfig.factcheck || {});
+      // Read the LIVE session config so /mode switches change gating immediately.
+      const liveConfig = (await getSession(sessionId))?.config || sessionConfig;
+      const gated = gateVerdict(rawVerdict, liveConfig.factcheck || {});
 
       const updated = await setClaimVerdict(sessionId, claimId, gated);
       const card = {

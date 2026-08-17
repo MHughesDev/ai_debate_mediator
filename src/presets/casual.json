@@ -1,0 +1,12 @@
+{
+  "format_id": "casual",
+  "label": "Casual / Meeting",
+  "description": "No structure; quiet fact-checking and dodge detection only",
+  "turns": { "structure": [], "seconds_per_turn": 0, "enforce": false },
+  "rubric": { "accuracy": 0.25, "evidence": 0.25, "logic": 0.25, "responsiveness": 0.25 },
+  "scoring_visibility": "off",
+  "factcheck": { "mode": "conservative", "false_verdict_min_confidence": 0.9 },
+  "mediator": { "strictness": "silent", "fallacy_flags": false, "dodge_detection": true },
+  "personality": "neutral",
+  "display": { "rotation": ["factcheck"], "receipts": false }
+}

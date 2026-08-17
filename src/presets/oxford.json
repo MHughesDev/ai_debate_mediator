@@ -1,0 +1,23 @@
+{
+  "format_id": "oxford",
+  "label": "Oxford",
+  "description": "Teams, motion, structured turns, formal live scoring",
+  "turns": {
+    "structure": [
+      { "label": "Opening — Proposition", "team": "Proposition", "seconds": 180 },
+      { "label": "Opening — Opposition", "team": "Opposition", "seconds": 180 },
+      { "label": "Rebuttal — Proposition", "team": "Proposition", "seconds": 120 },
+      { "label": "Rebuttal — Opposition", "team": "Opposition", "seconds": 120 },
+      { "label": "Closing — Proposition", "team": "Proposition", "seconds": 90 },
+      { "label": "Closing — Opposition", "team": "Opposition", "seconds": 90 }
+    ],
+    "seconds_per_turn": 180,
+    "enforce": true
+  },
+  "rubric": { "accuracy": 0.3, "evidence": 0.3, "logic": 0.2, "responsiveness": 0.2 },
+  "scoring_visibility": "live",
+  "factcheck": { "mode": "major_claims", "false_verdict_min_confidence": 0.85 },
+  "mediator": { "strictness": "enforce", "fallacy_flags": true, "dodge_detection": true },
+  "personality": "neutral",
+  "display": { "rotation": ["factcheck", "scoreboard", "turnclock"], "receipts": true }
+}

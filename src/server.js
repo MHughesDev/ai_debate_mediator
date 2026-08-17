@@ -19,6 +19,15 @@ export function createApp() {
 
   app.get('/healthz', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
+  app.get('/api/presets', async (_req, res, next) => {
+    try {
+      const { listPresets } = await import('./presets/index.js');
+      res.json({ presets: listPresets() });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   app.post('/api/sessions', async (req, res, next) => {
     try {
       const { meetingUrl, config = {}, speakers = [], motion = '', mock = false } = req.body || {};

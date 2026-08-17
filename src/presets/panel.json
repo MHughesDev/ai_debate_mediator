@@ -1,0 +1,12 @@
+{
+  "format_id": "panel",
+  "label": "Panel",
+  "description": "Multi-speaker, loose turns, fact-check on, no scoring",
+  "turns": { "structure": [], "seconds_per_turn": 0, "enforce": false },
+  "rubric": { "accuracy": 0.25, "evidence": 0.25, "logic": 0.25, "responsiveness": 0.25 },
+  "scoring_visibility": "off",
+  "factcheck": { "mode": "major_claims", "false_verdict_min_confidence": 0.85 },
+  "mediator": { "strictness": "silent", "fallacy_flags": true, "dodge_detection": false },
+  "personality": "neutral",
+  "display": { "rotation": ["factcheck"], "receipts": true }
+}
