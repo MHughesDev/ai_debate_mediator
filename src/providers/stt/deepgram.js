@@ -11,7 +11,7 @@ export function createDeepgramProvider() {
   return {
     kind: 'deepgram',
 
-    createStream({ sessionId, participantId, onTranscript }) {
+    createStream({ sessionId, participantId, onTranscript, onError }) {
       const ws = new WebSocket(DG_URL, {
         headers: { Authorization: `Token ${config.deepgramApiKey}` },
       });
@@ -36,11 +36,15 @@ export function createDeepgramProvider() {
         if (!text) return;
         onTranscript({ text, isFinal: !!msg.is_final, ts: Date.now() });
       });
-      ws.on('error', (err) =>
-        logger.error('deepgram stream error', { sessionId, participantId, error: err.message }),
-      );
+      ws.on('error', (err) => {
+        logger.error('deepgram stream error', { sessionId, participantId, error: err.message });
+        if (onError) onError(err);
+      });
       ws.on('close', () => {
-        if (!closed) logger.warn('deepgram stream closed unexpectedly', { sessionId, participantId });
+        if (!closed) {
+          logger.warn('deepgram stream closed unexpectedly', { sessionId, participantId });
+          if (onError) onError(new Error('transcription stream dropped'));
+        }
       });
 
       const keepalive = setInterval(() => {

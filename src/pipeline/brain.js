@@ -7,11 +7,13 @@ import { startExtractor } from './extractor.js';
 import { startVerifier } from './verifier.js';
 import { startScorer, recordFallacy } from './scoreEngine.js';
 import { startTurnClock } from './turnClock.js';
+import { startDodgeTracker } from './dodge.js';
+import { generateAndPublishReceipts } from './receipts.js';
 import { publishEvent } from '../sessions/events.js';
 import { getSession } from '../sessions/manager.js';
 import { config } from '../config.js';
 
-export async function startBrain(sessionId, { llm, searchProvider, extractIntervalMs, scoreIntervalMs } = {}) {
+export async function startBrain(sessionId, { llm, searchProvider, extractIntervalMs, scoreIntervalMs, dodgeTimeoutMs } = {}) {
   const session = await getSession(sessionId);
   const sessionConfig = session?.config || {};
   const resolvedLlm = llm || getLlmProvider();
@@ -23,10 +25,19 @@ export async function startBrain(sessionId, { llm, searchProvider, extractInterv
     sessionConfig,
   });
 
+  const dodgeTracker = startDodgeTracker(sessionId, {
+    enabled: sessionConfig.mediator?.dodge_detection !== false,
+    timeoutMs: dodgeTimeoutMs || sessionConfig.mediator?.dodge_timeout_ms || config.dodgeTimeoutMs,
+    flagDodges: sessionConfig.mediator?.strictness !== 'silent',
+  });
+
   const fallacyFlagsEnabled = sessionConfig.mediator?.fallacy_flags !== false;
   const extractor = startExtractor(sessionId, {
     llm: resolvedLlm,
     intervalMs: extractIntervalMs || config.extractIntervalMs,
+    async onClaim(claim) {
+      if (claim.type === 'question') dodgeTracker.trackQuestion(claim);
+    },
     async onFallacy(fallacy) {
       await recordFallacy(sessionId, fallacy.speaker); // always scored...
       if (!fallacyFlagsEnabled) return; // ...but only flagged when the preset wants it
@@ -56,16 +67,23 @@ export async function startBrain(sessionId, { llm, searchProvider, extractInterv
     verifier,
     scorer,
     turnClock,
+    dodgeTracker,
     llm: resolvedLlm,
     async stop() {
-      // Drain: final extraction pass, let in-flight verifications finish, then
-      // take the final score snapshot (reveals when visibility === 'end').
+      // Drain: final extraction pass, let in-flight verifications finish, take
+      // the final score snapshot (reveals when visibility === 'end'), then
+      // close with receipts as the display's terminal state.
       await turnClock.stop();
       await extractor.drain().catch(() => {});
       await extractor.stop();
       await verifier.waitForIdle(config.verifyTimeoutMs).catch(() => {});
       await verifier.stop();
+      await dodgeTracker.stop();
       await scorer.stop({ revealFinal: true });
+      await generateAndPublishReceipts(sessionId, {
+        llm: resolvedLlm,
+        dodgeStats: dodgeTracker.stats(),
+      });
     },
   };
 }

@@ -10,6 +10,7 @@ import { setSessionStatus, getSession } from '../sessions/manager.js';
 import { publishEvent } from '../sessions/events.js';
 import { handleChatMessage } from './chatCommands.js';
 import { startBrain } from './brain.js';
+import { recordBotSeconds, recordSttSeconds } from './costMeter.js';
 import { logger } from '../logger.js';
 
 export async function startSessionPipeline(sessionId, { meetingProvider, sttProvider, brainOptions } = {}) {
@@ -32,6 +33,14 @@ export async function startSessionPipeline(sessionId, { meetingProvider, sttProv
     stream = stt.createStream({
       sessionId,
       participantId,
+      onError: () => {
+        // Failure-mode UX: an STT drop must degrade honestly, not silently.
+        publishEvent(sessionId, 'alert', {
+          text: `⚠️ Transcription degraded for ${speaker.name} — reconnecting`,
+          hold_ms: 6000,
+        }).catch(() => {});
+        sttStreams.delete(participantId); // next audio chunk recreates the stream
+      },
       onTranscript: ({ text, isFinal }) => {
         if (stopped) return;
         if (isFinal) {
@@ -87,10 +96,15 @@ export async function startSessionPipeline(sessionId, { meetingProvider, sttProv
 
   controller = await meeting.startMeeting(session, handlers);
   brain = await startBrain(sessionId, brainOptions);
+  const startedAt = Date.now();
 
   registerPipeline(sessionId, {
     async stop() {
       stopped = true;
+      // Cost meter: bot-hours ~ call duration; STT-hours ~ duration x streams.
+      const seconds = Math.round((Date.now() - startedAt) / 1000);
+      await recordBotSeconds(sessionId, seconds).catch(() => {});
+      await recordSttSeconds(sessionId, seconds * Math.max(1, sttStreams.size)).catch(() => {});
       for (const [, stream] of sttStreams) stream.close();
       sttStreams.clear();
       if (controller) await controller.stop().catch(() => {});

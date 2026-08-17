@@ -11,7 +11,7 @@ import { getSession } from '../sessions/manager.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 
-export function startExtractor(sessionId, { llm, intervalMs = config.extractIntervalMs, onFallacy }) {
+export function startExtractor(sessionId, { llm, intervalMs = config.extractIntervalMs, onFallacy, onClaim }) {
   let cursor = 0;
   let running = false;
   let stopped = false;
@@ -52,6 +52,7 @@ export function startExtractor(sessionId, { llm, intervalMs = config.extractInte
           links,
         });
         await publishEvent(sessionId, 'claim', { claim });
+        if (onClaim) await onClaim(claim);
         if (claim.checkable) await enqueueVerification(sessionId, claim.id);
       }
 

@@ -9,7 +9,7 @@ export function createAssemblyAiProvider() {
   return {
     kind: 'assemblyai',
 
-    createStream({ sessionId, participantId, onTranscript }) {
+    createStream({ sessionId, participantId, onTranscript, onError }) {
       const ws = new WebSocket(AAI_URL, {
         headers: { Authorization: config.assemblyaiApiKey },
       });
@@ -40,9 +40,10 @@ export function createAssemblyAiProvider() {
           onTranscript({ text: msg.text.trim(), isFinal: false, ts: Date.now() });
         }
       });
-      ws.on('error', (err) =>
-        logger.error('assemblyai stream error', { sessionId, participantId, error: err.message }),
-      );
+      ws.on('error', (err) => {
+        logger.error('assemblyai stream error', { sessionId, participantId, error: err.message });
+        if (onError) onError(err);
+      });
 
       return {
         write(chunk) {

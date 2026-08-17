@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Debate — Stage</title>
+<link rel="stylesheet" href="./stage.css" />
+</head>
+<body>
+  <main>
+    <aside id="rail">
+      <h1>SCOREBOARD</h1>
+      <div id="scores"></div>
+      <div id="motion" class="motion"></div>
+    </aside>
+
+    <section id="map-wrap">
+      <h1>ARGUMENT MAP</h1>
+      <svg id="map" preserveAspectRatio="xMidYMid meet"></svg>
+      <div id="map-legend">
+        <span><i class="dot TRUE"></i>true</span>
+        <span><i class="dot FALSE"></i>false</span>
+        <span><i class="dot MISLEADING"></i>misleading</span>
+        <span><i class="dot UNVERIFIED"></i>unverified</span>
+        <span><i class="dot opinion"></i>opinion/prediction</span>
+        <span class="edge-key">→ rebuts</span>
+      </div>
+    </section>
+
+    <aside id="feed-wrap">
+      <h1>FACT CHECKS</h1>
+      <div id="feed"></div>
+    </aside>
+  </main>
+
+  <footer id="ticker">
+    <span id="t-speaker">—</span>
+    <span id="t-clock"></span>
+    <span id="t-pending"></span>
+    <span id="t-conn"></span>
+  </footer>
+  <script type="module" src="./stage.js"></script>
+</body>
+</html>

@@ -40,6 +40,20 @@ export async function getCounters(sessionId) {
   return counters;
 }
 
+// Persist final counters + estimate to Neon (called at session end).
+export async function persistCosts(sessionId) {
+  const counters = await getCounters(sessionId);
+  const estimate = estimateCost(counters);
+  const { getDb } = await import('../db/postgres.js');
+  const db = await getDb();
+  await db.query(
+    'INSERT INTO session_costs (session_id, counters, estimate_usd, updated_at) VALUES ($1,$2,$3,now()) ' +
+      'ON CONFLICT (session_id) DO UPDATE SET counters = $2, estimate_usd = $3, updated_at = now()',
+    [sessionId, JSON.stringify(counters), estimate],
+  );
+  return { counters, estimate };
+}
+
 // Estimate in USD from counters using env-priced rates.
 export function estimateCost(counters) {
   const r = config.costRates;

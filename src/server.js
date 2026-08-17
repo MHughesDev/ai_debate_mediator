@@ -120,6 +120,32 @@ export function createApp() {
     }
   });
 
+  // Per-session cost counters + USD estimate (SPEC §6.5 instrumentation).
+  app.get('/api/sessions/:id/costs', async (req, res, next) => {
+    try {
+      const session = await getSession(req.params.id);
+      if (!session) return res.status(404).json({ error: 'not found' });
+      const { getCounters, estimateCost } = await import('./pipeline/costMeter.js');
+      const counters = await getCounters(req.params.id);
+      res.json({ counters, estimate_usd: estimateCost(counters) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.get('/api/sessions/:id/receipts', async (req, res, next) => {
+    try {
+      const session = await getSession(req.params.id);
+      if (!session) return res.status(404).json({ error: 'not found' });
+      const { getReceipts } = await import('./pipeline/receipts.js');
+      const receipts = await getReceipts(req.params.id);
+      if (!receipts) return res.status(404).json({ error: 'no receipts yet' });
+      res.json(receipts);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // Argument graph (claims + verdict state) — feeds stage mode + dashboards.
   app.get('/api/sessions/:id/claims', async (req, res, next) => {
     try {
