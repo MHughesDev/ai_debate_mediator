@@ -12,7 +12,7 @@ import { handleChatMessage } from './chatCommands.js';
 import { startBrain } from './brain.js';
 import { logger } from '../logger.js';
 
-export async function startSessionPipeline(sessionId, { meetingProvider, sttProvider } = {}) {
+export async function startSessionPipeline(sessionId, { meetingProvider, sttProvider, brainOptions } = {}) {
   if (getPipeline(sessionId)) return { alreadyRunning: true };
   const session = await getSession(sessionId);
   if (!session) throw Object.assign(new Error('session not found'), { status: 404 });
@@ -86,7 +86,7 @@ export async function startSessionPipeline(sessionId, { meetingProvider, sttProv
   };
 
   controller = await meeting.startMeeting(session, handlers);
-  brain = await startBrain(sessionId);
+  brain = await startBrain(sessionId, brainOptions);
 
   registerPipeline(sessionId, {
     async stop() {

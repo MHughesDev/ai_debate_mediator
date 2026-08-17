@@ -111,6 +111,18 @@ export function createApp() {
     }
   });
 
+  // Argument graph (claims + verdict state) — feeds stage mode + dashboards.
+  app.get('/api/sessions/:id/claims', async (req, res, next) => {
+    try {
+      const session = await getSession(req.params.id);
+      if (!session) return res.status(404).json({ error: 'not found' });
+      const { getClaims } = await import('./pipeline/argumentGraph.js');
+      res.json({ claims: await getClaims(req.params.id) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   app.post('/api/sessions/:id/mock', async (req, res, next) => {
     try {
       const session = await getSession(req.params.id);
