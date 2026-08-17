@@ -1,0 +1,39 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #0d1117; --panel: #161b22; --border: #30363d;
+  --text: #f0f6fc; --muted: #8b949e; --accent: #58a6ff;
+  --true: #3fb950; --false: #f85149; --misleading: #d29922;
+}
+body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+h1 { font-size: 18px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 14px 0 8px; }
+.muted { color: var(--muted); font-size: 12px; }
+.header-right { display: flex; gap: 8px; }
+.pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border); }
+.pill.warn { color: var(--misleading); }
+.pill.ok { color: var(--true); }
+
+main { flex: 1; display: grid; grid-template-columns: 1fr 360px; gap: 16px; padding: 16px 20px; overflow: hidden; }
+.col { overflow-y: auto; min-height: 0; }
+
+.transcript { display: flex; flex-direction: column; gap: 8px; }
+.utt { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+.utt .who { font-weight: 600; color: var(--accent); font-size: 12px; }
+.utt .who .team { color: var(--muted); font-weight: 400; }
+.interim { color: var(--muted); font-style: italic; font-size: 13px; padding: 8px 4px; min-height: 30px; }
+
+.cards { display: flex; flex-direction: column; gap: 8px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+.card .v { font-weight: 700; }
+.card .v.TRUE { color: var(--true); }
+.card .v.FALSE { color: var(--false); }
+.card .v.MISLEADING { color: var(--misleading); }
+.card .v.UNVERIFIABLE, .card .v.UNVERIFIED { color: var(--muted); }
+.card a { color: var(--accent); }
+.score-row { display: flex; justify-content: space-between; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.danger:hover { border-color: var(--false); color: var(--false); }

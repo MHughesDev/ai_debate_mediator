@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mediator Dashboard</title>
+<link rel="stylesheet" href="./dashboard.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Host Dashboard</h1>
+      <div id="session-line" class="muted"></div>
+    </div>
+    <div class="header-right">
+      <span id="conn" class="pill warn">connecting…</span>
+      <span id="status" class="pill">—</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="col">
+      <h2>Live transcript</h2>
+      <div id="transcript" class="transcript"></div>
+      <div id="interim" class="interim"></div>
+    </section>
+
+    <section class="col side">
+      <h2>Speakers</h2>
+      <div id="speakers" class="cards"></div>
+
+      <h2>Fact checks</h2>
+      <div id="factchecks" class="cards"></div>
+
+      <h2>Scoreboard</h2>
+      <div id="scores" class="cards"></div>
+
+      <h2>Controls</h2>
+      <div class="controls">
+        <button id="btn-start">Send bot / start</button>
+        <button id="btn-pause">Pause scoring</button>
+        <button id="btn-resume">Resume</button>
+        <button id="btn-end" class="danger">End session</button>
+      </div>
+      <div id="flags" class="cards"></div>
+    </section>
+  </main>
+  <script type="module" src="./dashboard.js"></script>
+</body>
+</html>

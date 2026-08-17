@@ -3,6 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createSession, getSession, getSnapshot, setSessionStatus } from './sessions/manager.js';
 import { startMock, stopMock } from './mock/generator.js';
+import { startSessionPipeline } from './pipeline/session.js';
+import { stopPipeline } from './pipeline/runtime.js';
+import { getTranscriptTail } from './pipeline/transcript.js';
+import { getSpeakers } from './pipeline/speakers.js';
+import { handleChatMessage } from './pipeline/chatCommands.js';
 import { logger } from './logger.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,12 +50,62 @@ export function createApp() {
     }
   });
 
+  // "Send bot": start the live pipeline (meeting provider joins the call).
+  app.post('/api/sessions/:id/start', async (req, res, next) => {
+    try {
+      const result = await startSessionPipeline(req.params.id);
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   app.post('/api/sessions/:id/end', async (req, res, next) => {
     try {
+      await stopPipeline(req.params.id);
       const session = await setSessionStatus(req.params.id, 'ended');
       if (!session) return res.status(404).json({ error: 'not found' });
       stopMock(req.params.id);
       res.json(session);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.get('/api/sessions/:id/transcript', async (req, res, next) => {
+    try {
+      const session = await getSession(req.params.id);
+      if (!session) return res.status(404).json({ error: 'not found' });
+      const count = Math.min(parseInt(req.query.count || '100', 10), 500);
+      res.json({ entries: await getTranscriptTail(req.params.id, count) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Host-dashboard command entry point — same registry as in-call chat commands.
+  app.post('/api/sessions/:id/command', async (req, res, next) => {
+    try {
+      const session = await getSession(req.params.id);
+      if (!session) return res.status(404).json({ error: 'not found' });
+      const { name, args = [] } = req.body || {};
+      if (!name) return res.status(400).json({ error: 'name is required' });
+      const handled = await handleChatMessage(req.params.id, {
+        participantId: 'dashboard',
+        name: 'Host dashboard',
+        text: `/${name} ${args.join(' ')}`.trim(),
+      });
+      res.json({ ok: true, handled });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.get('/api/sessions/:id/speakers', async (req, res, next) => {
+    try {
+      const session = await getSession(req.params.id);
+      if (!session) return res.status(404).json({ error: 'not found' });
+      res.json({ speakers: await getSpeakers(req.params.id) });
     } catch (err) {
       next(err);
     }

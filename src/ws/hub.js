@@ -4,21 +4,36 @@
 import { WebSocketServer } from 'ws';
 import { getSession, getSnapshot } from '../sessions/manager.js';
 import { getEventsSince, subscribeSession } from '../sessions/events.js';
+import { dispatchRecallMessage } from '../providers/meeting/recall.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 
 export function attachWsHub(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
+  const recallWss = new WebSocketServer({ noServer: true });
   // sessionId -> { unsubscribe, clients:Set<ws> }
   const subscriptions = new Map();
 
   httpServer.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url, 'http://localhost');
-    if (url.pathname !== '/ws') {
+    if (url.pathname === '/ws') {
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    } else if (url.pathname === '/ws/recall') {
+      // Recall.ai realtime endpoint: Recall's cloud connects here and streams
+      // per-participant audio + participant/chat events for the session.
+      recallWss.handleUpgrade(req, socket, head, (ws) => {
+        const sessionId = url.searchParams.get('session');
+        if (!sessionId) {
+          ws.close(4400, 'missing session');
+          return;
+        }
+        logger.info('recall realtime connected', { sessionId });
+        ws.on('message', (data) => dispatchRecallMessage(sessionId, data.toString()));
+        ws.on('close', () => logger.info('recall realtime disconnected', { sessionId }));
+      });
+    } else {
       socket.destroy();
-      return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
   });
 
   async function ensureSubscribed(sessionId) {
@@ -107,6 +122,8 @@ export function attachWsHub(httpServer) {
     wss,
     async close() {
       clearInterval(heartbeat);
+      for (const ws of recallWss.clients) ws.close(1001, 'server shutdown');
+      await new Promise((resolve) => recallWss.close(resolve));
       for (const ws of wss.clients) ws.close(1001, 'server shutdown');
       for (const [, entry] of subscriptions) if (entry.unsubscribe) await entry.unsubscribe();
       subscriptions.clear();

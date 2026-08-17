@@ -1,0 +1,27 @@
+{
+  "motion": "This house believes governments should ban new gasoline car sales by 2035",
+  "participants": [
+    { "id": "p-host", "name": "Sam Chen", "isHost": true },
+    { "id": "p-alex", "name": "Alex Rivera" },
+    { "id": "p-jordan", "name": "Jordan Blake" }
+  ],
+  "events": [
+    { "type": "utterance", "atMs": 1000, "participant": "p-host", "text": "Welcome to tonight's debate on the motion: this house believes governments should ban new gasoline car sales by 2035. Alex opens for the proposition." },
+    { "type": "utterance", "atMs": 4000, "participant": "p-alex", "text": "Thank you Sam. The transition is already happening: global electric vehicle sales tripled between 2020 and 2023, according to the International Energy Agency." },
+    { "type": "utterance", "atMs": 8000, "participant": "p-alex", "text": "In Norway, roughly eighty percent of new cars sold are already electric. A 2035 ban simply confirms where the market is going." },
+    { "type": "utterance", "atMs": 12000, "participant": "p-alex", "text": "I believe a firm deadline is the fairest policy for both industry and consumers, and I predict most major economies will adopt one within five years." },
+    { "type": "utterance", "atMs": 16000, "participant": "p-jordan", "text": "That optimism ignores the facts. Electric vehicles actually emit more carbon dioxide than gasoline cars over their lifetime, once you count the battery." },
+    { "type": "utterance", "atMs": 20000, "participant": "p-jordan", "text": "And charging infrastructure is a fantasy — you can see the gaps from space, much like the Great Wall of China is visible from the Moon." },
+    { "type": "utterance", "atMs": 24000, "participant": "p-jordan", "text": "Alex, what happens to the used gasoline fleet after 2035 — who pays for stranding millions of working cars?" },
+    { "type": "utterance", "atMs": 28000, "participant": "p-alex", "text": "Jordan's numbers are simply wrong. Lifecycle studies show EVs emit far less CO2 than gasoline cars even including battery manufacturing." },
+    { "type": "utterance", "atMs": 32000, "participant": "p-alex", "text": "The IEA and the ICCT both confirm this. The evidence is on the proposition's side." },
+    { "type": "chat", "atMs": 34000, "participant": "p-host", "text": "/check that" },
+    { "type": "utterance", "atMs": 36000, "participant": "p-jordan", "text": "Of course Alex would say that — someone who has never worked a day in the auto industry and clearly doesn't understand real engineering." },
+    { "type": "utterance", "atMs": 40000, "participant": "p-jordan", "text": "In my opinion, mandates are the wrong tool. Markets should decide, not bureaucrats." },
+    { "type": "utterance", "atMs": 44000, "participant": "p-alex", "text": "Norway shows mandates and markets work together. Unemployment there is at its lowest level in history, even during the transition." },
+    { "type": "utterance", "atMs": 48000, "participant": "p-jordan", "text": "I predict the 2035 targets will quietly slip to 2040 in most countries within two years." },
+    { "type": "utterance", "atMs": 52000, "participant": "p-host", "text": "Closing statements please. Thirty seconds each." },
+    { "type": "utterance", "atMs": 55000, "participant": "p-alex", "text": "The data is clear: EV adoption is accelerating, lifecycle emissions favor electrification, and a 2035 deadline gives industry certainty. Support the motion." },
+    { "type": "utterance", "atMs": 59000, "participant": "p-jordan", "text": "A ban is premature central planning. Vote against the motion and let innovation, not deadlines, decide." }
+  ]
+}
