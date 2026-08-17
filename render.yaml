@@ -6,9 +6,14 @@ services:
   - type: web
     name: debate-mediator
     runtime: docker
+    dockerfilePath: ./Dockerfile
     plan: free
+    # Match the Recall.ai region you use, to keep the audio loop short.
+    region: oregon
     healthCheckPath: /healthz
+    autoDeploy: true
     envVars:
+      # All secrets are set in the Render dashboard (sync:false = not in git).
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
@@ -19,7 +24,15 @@ services:
         sync: false
       - key: DEEPGRAM_API_KEY
         sync: false
+      - key: ASSEMBLYAI_API_KEY
+        sync: false
       - key: TAVILY_API_KEY
         sync: false
+      - key: EXA_API_KEY
+        sync: false
+      # Recall builds the bot's display-page and audio-callback URLs from this.
+      # Set it to https://<your-service>.onrender.com after the first deploy.
       - key: PUBLIC_BASE_URL
         sync: false
+      - key: RECALL_REGION
+        value: us-west-2
