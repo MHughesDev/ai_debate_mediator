@@ -1,44 +1,22 @@
 // Display state machine: single-focus rotating states driven by WS events.
-// Priorities (high -> low): receipts > factcheck > flag > scoreboard > idle.
-// Hero states hold for event.hold_ms then fall back to idle/listening.
+// Scheduling rules (priority, holds, queueing) live in shared/viewQueue.js.
 import { connectSession, sessionIdFromUrl } from '../shared/ws-client.js';
+import { createViewQueue } from '../shared/viewQueue.js';
 
 const $ = (id) => document.getElementById(id);
 const views = ['idle', 'factcheck', 'scoreboard', 'flag', 'receipts'];
 
 const state = {
-  current: 'idle',
-  holdTimer: null,
   clockTimer: null,
   clock: null, // {label, remaining_s, total_s, overtime, receivedAt}
-  queue: [], // lower-priority holds queued behind the active hero state
 };
 
 function show(view) {
-  state.current = view;
   for (const v of views) $(`view-${v}`).classList.toggle('active', v === view);
 }
 
-function holdThenIdle(view, holdMs) {
-  clearTimeout(state.holdTimer);
-  show(view);
-  state.holdTimer = setTimeout(() => {
-    const next = state.queue.shift();
-    if (next) holdThenIdle(next.view, next.holdMs);
-    else show('idle');
-  }, holdMs || 8000);
-}
-
-const PRIORITY = { receipts: 4, factcheck: 3, flag: 2, scoreboard: 1 };
-function requestView(view, holdMs) {
-  if (state.current === 'idle' || PRIORITY[view] >= PRIORITY[state.current]) {
-    holdThenIdle(view, holdMs);
-  } else {
-    // queue behind current hero state (drop dupes of same view)
-    state.queue = state.queue.filter((q) => q.view !== view);
-    state.queue.push({ view, holdMs });
-  }
-}
+const viewQueue = createViewQueue({ onShow: show });
+const requestView = (view, holdMs, render) => viewQueue.request(view, holdMs, render);
 
 function fmtClock(s) {
   const m = Math.floor(Math.abs(s) / 60);
@@ -68,47 +46,53 @@ function onTurnclock(e) {
 }
 
 function onFactcheck(e) {
-  $('fc-claim').textContent = e.claim;
-  $('fc-speaker').textContent = e.speaker ? `— ${e.speaker}` : '';
-  const v = $('fc-verdict');
-  const verdict = e.verdict === 'UNVERIFIED' ? '⏳ UNVERIFIED' : e.verdict;
-  v.textContent = verdict;
-  v.className = `fc-verdict ${e.verdict}`;
-  $('fc-evidence').textContent = e.evidence || '';
-  const src = e.sources && e.sources[0];
-  $('fc-source').textContent = src ? `Source: ${src.name}` : '';
-  requestView('factcheck', e.hold_ms || 15000);
+  requestView('factcheck', e.hold_ms || 15000, () => {
+    $('fc-claim').textContent = e.claim;
+    $('fc-speaker').textContent = e.speaker ? `— ${e.speaker}` : '';
+    const v = $('fc-verdict');
+    v.textContent = e.verdict === 'UNVERIFIED' ? '⏳ UNVERIFIED' : e.verdict;
+    v.className = `fc-verdict ${e.verdict}`;
+    $('fc-evidence').textContent = e.evidence || '';
+    const src = e.sources && e.sources[0];
+    $('fc-source').textContent = src ? `Source: ${src.name}` : '';
+  });
 }
 
 function onScoreboard(e) {
   if (e.visibility === 'off' || e.visibility === 'end') return; // never show live when hidden
-  const rows = $('sb-rows');
-  rows.innerHTML = '';
-  for (const s of e.scores || []) {
-    const row = document.createElement('div');
-    row.className = 'sb-row';
-    row.innerHTML = `
-      <div><div class="sb-name"></div><div class="sb-team"></div></div>
-      <div class="sb-total"></div>
-      <div class="sb-bar"><div></div></div>`;
-    row.querySelector('.sb-name').textContent = s.speaker;
-    row.querySelector('.sb-team').textContent = s.team || '';
-    row.querySelector('.sb-total').textContent = Math.round(s.total);
-    row.querySelector('.sb-bar > div').style.width = `${Math.max(2, Math.min(100, s.total))}%`;
-    rows.appendChild(row);
-  }
-  requestView('scoreboard', e.hold_ms || 6000);
+  requestView('scoreboard', e.hold_ms || 6000, () => {
+    const rows = $('sb-rows');
+    rows.innerHTML = '';
+    for (const s of e.scores || []) {
+      const row = document.createElement('div');
+      row.className = 'sb-row';
+      row.innerHTML = `
+        <div><div class="sb-name"></div><div class="sb-team"></div></div>
+        <div class="sb-total"></div>
+        <div class="sb-bar"><div></div></div>`;
+      row.querySelector('.sb-name').textContent = s.speaker;
+      row.querySelector('.sb-team').textContent = s.team || '';
+      row.querySelector('.sb-total').textContent = Math.round(s.total);
+      row.querySelector('.sb-bar > div').style.width = `${Math.max(2, Math.min(100, s.total))}%`;
+      rows.appendChild(row);
+    }
+  });
 }
 
 function onFlag(e) {
-  $('flag-kind').textContent = e.kind === 'dodge' ? '⚑ UNANSWERED QUESTION' : '⚑ FALLACY FLAG';
-  $('flag-label').textContent = e.label || '';
-  $('flag-speaker').textContent = e.speaker ? `— ${e.speaker}` : '';
-  $('flag-detail').textContent = e.detail || '';
-  requestView('flag', e.hold_ms || 7000);
+  requestView('flag', e.hold_ms || 7000, () => {
+    $('flag-kind').textContent = e.kind === 'dodge' ? '⚑ UNANSWERED QUESTION' : '⚑ FALLACY FLAG';
+    $('flag-label').textContent = e.label || '';
+    $('flag-speaker').textContent = e.speaker ? `— ${e.speaker}` : '';
+    $('flag-detail').textContent = e.detail || '';
+  });
 }
 
 function onReceipts(e) {
+  viewQueue.takeover('receipts', () => renderReceipts(e)); // terminal state
+}
+
+function renderReceipts(e) {
   const body = $('receipts-body');
   body.innerHTML = '';
   const lines = [];
@@ -124,9 +108,6 @@ function onReceipts(e) {
     div.innerHTML = html;
     body.appendChild(div);
   }
-  clearTimeout(state.holdTimer);
-  state.queue = [];
-  show('receipts'); // terminal state, no fallback to idle
 }
 
 function onPending(e) {
