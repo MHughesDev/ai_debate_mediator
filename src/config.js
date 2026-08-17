@@ -34,6 +34,11 @@ export const config = {
   // ---- Own search engine (ADR-0006) ----
   // Backends: Wikipedia needs no key; the rest activate when configured.
   braveApiKey: env.BRAVE_API_KEY || '',
+  // Brave's free tier is ~1 query/sec and ~2k queries/month. We meter to that
+  // rather than collecting 429s, and cap how many of a claim's planned queries
+  // may spend quota (see rateLimiter.js). Paid tiers: raise BRAVE_QPS.
+  braveQps: num(env.BRAVE_QPS, 1),
+  braveMaxQueries: int(env.BRAVE_MAX_QUERIES, 1),
   googleCseKey: env.GOOGLE_CSE_KEY || '',
   googleCseCx: env.GOOGLE_CSE_CX || '',
   searxngUrl: env.SEARXNG_URL || '',

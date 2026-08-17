@@ -11,7 +11,22 @@ import { createTavilyProvider } from './tavily.js';
 import { createExaProvider } from './exa.js';
 import { createMockSearchProvider } from './mock.js';
 
+// Memoized: the provider owns process-wide state that must not be rebuilt per
+// session — the circuit breaker (a dead backend is dead for every session) and
+// the Brave quota meter (an account-level limit).
+let cached = null;
+
 export function getSearchProvider() {
+  if (cached) return cached;
+  cached = buildSearchProvider();
+  return cached;
+}
+
+export function _resetSearchProviderForTests() {
+  cached = null;
+}
+
+function buildSearchProvider() {
   switch (config.searchProvider) {
     case 'own':
       return createOwnSearchProvider();

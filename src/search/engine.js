@@ -29,7 +29,12 @@ export function createSearchEngine({ config, backends: injectedBackends, fetchIm
     const jobs = [];
     for (const backend of backends) {
       if (!breaker.allow(backend.name)) continue;
-      for (const { q } of plan.queries) {
+      // Quota-capped backends (Brave's free tier is ~1 query/sec) get only
+      // their highest-value queries. The planner orders queries core-first, so
+      // slicing keeps the query that matters and sheds the speculative ones;
+      // keyless backends still run the whole plan.
+      const queries = backend.maxQueries ? plan.queries.slice(0, backend.maxQueries) : plan.queries;
+      for (const { q } of queries) {
         jobs.push(
           (async () => {
             const remaining = deadlineAt - Date.now();
@@ -37,10 +42,18 @@ export function createSearchEngine({ config, backends: injectedBackends, fetchIm
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), Math.min(remaining, config.searchBackendTimeoutMs));
             try {
-              const results = await backend.search(q, { limit: 8, signal: controller.signal });
+              const results = await backend.search(q, { limit: 8, signal: controller.signal, deadlineAt });
               breaker.success(backend.name);
               return { backend: `${backend.name}:${q}`, results };
             } catch (err) {
+              // A quota skip is not a failure. The backend is healthy; we
+              // simply had no rate-limit budget for it before this claim's
+              // deadline. Counting it would trip the breaker and disable a
+              // working backend for the whole cooldown window.
+              if (err.skip) {
+                logger.debug('search backend skipped', { backend: backend.name, reason: err.message });
+                return null;
+              }
               breaker.failure(backend.name);
               logger.debug('search backend failed', { backend: backend.name, error: err.message });
               return null;

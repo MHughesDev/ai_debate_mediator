@@ -8,6 +8,7 @@ import { stopPipeline } from './pipeline/runtime.js';
 import { getTranscriptTail } from './pipeline/transcript.js';
 import { getSpeakers } from './pipeline/speakers.js';
 import { handleChatMessage } from './pipeline/chatCommands.js';
+import { getSearchProvider } from './providers/search/index.js';
 import { logger } from './logger.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -17,7 +18,25 @@ export function createApp() {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
 
-  app.get('/healthz', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
+  // Health includes search backend state because that is what degrades silently:
+  // an open circuit breaker means a backend is being skipped and verdicts are
+  // running on thinner evidence, which is invisible from the transcript alone.
+  app.get('/healthz', (_req, res) => {
+    const health = { ok: true, uptime: process.uptime() };
+    try {
+      const provider = getSearchProvider();
+      health.search = {
+        kind: provider.kind,
+        backends: provider.backends || [],
+        breaker: provider.engine?.breakerState?.() || {},
+      };
+    } catch {
+      // Health must never fail because search is misconfigured — that is
+      // exactly when someone needs this endpoint to answer.
+      health.search = { kind: 'unavailable' };
+    }
+    res.json(health);
+  });
 
   app.get('/api/presets', async (_req, res, next) => {
     try {

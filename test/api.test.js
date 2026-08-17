@@ -53,3 +53,16 @@ test('api: mock generator can be started and produces state', async (t) => {
   });
   assert.equal(stop.status, 200);
 });
+
+test('api: healthz reports which search backends are live and whether any are cut off', async (t) => {
+  const srv = await setupTestServer();
+  t.after(() => srv.close());
+
+  const health = await (await fetch(`${srv.baseUrl}/healthz`)).json();
+  assert.equal(health.ok, true);
+  // Search health is the part that degrades silently in a live debate: an open
+  // breaker means verdicts are running on thinner evidence than they look.
+  assert.ok(health.search, 'health reports search state');
+  assert.ok(Array.isArray(health.search.backends), 'names the backends in use');
+  assert.deepEqual(health.search.breaker ?? {}, {}, 'nothing cut off on a fresh process');
+});

@@ -74,3 +74,46 @@ infrastructure programme and buys nothing this product needs.
 
 ### Measured at time of writing (Wikipedia backend only, no keys)
 p50 ≈ 700 ms, worst ≈ 1.1 s against a 4.5 s deadline; cache hits ≈ 0 ms.
+
+## Amendment (2026-08-17): Brave is the general-web backend
+
+ADR-0006 chose to build the retrieval layer but left which general-web index to
+federate open. Chosen: **Brave Search API**, on the free tier.
+
+Why Brave over the alternatives considered:
+- It is an **independent index**, not a Google/Bing reseller, so it federates
+  with Wikipedia as a genuinely different retriever. Fusion rewards agreement
+  between independent backends, which is worth nothing if they share a source.
+- It returns **publication dates**, which our recency scoring needs. Google CSE
+  does not reliably, and undated results are dead weight on time-sensitive
+  claims.
+- Free tier (~2,000 queries/month) comfortably covers real use: metered as
+  below, a one-hour debate spends roughly 40 queries.
+- No infrastructure to run, unlike SearXNG, which remains supported for
+  deployments that would rather self-host than hold a third-party key.
+
+### Consequence: quota metering, and why a skip is not a failure
+The free tier allows ~1 query/second. Claims are verified concurrently and each
+plans several queries, so naive parallelism earns 429s rather than evidence.
+Three rules follow, and each one is load-bearing:
+
+1. **Slots are reserved synchronously** (`src/search/rateLimiter.js`), before
+   any `await`, so concurrent callers can never be handed the same instant.
+2. **Waiting is deadline-aware.** If a caller's slot would land after its
+   verdict deadline, it is told to skip immediately instead of blocking and
+   then timing out. Losing one backend on one claim is acceptable; delaying a
+   verdict is not.
+3. **A quota skip is not a backend failure.** It must not count toward the
+   circuit breaker — otherwise running low on quota would look like a broken
+   vendor and take a healthy Brave offline for the whole cooldown window.
+
+The limiter is **per process, not per engine**. Engines are built per debate
+session, but the quota belongs to the account, so a per-engine limiter would let
+two concurrent debates each believe they had the full budget. `getSearchProvider()`
+is memoized for the same reason, which also shares circuit-breaker state across
+sessions.
+
+Only the highest-value query per claim spends quota (`BRAVE_MAX_QUERIES`, default
+1). The query planner orders queries core-first, so the metered backend gets the
+query that matters and the keyless backends absorb the speculative ones. Both
+`BRAVE_QPS` and `BRAVE_MAX_QUERIES` are raised on a paid tier.

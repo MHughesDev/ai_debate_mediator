@@ -58,7 +58,7 @@ Adding env vars switches the same code paths from mocks to real vendors (selecti
 | `RECALL_API_KEY` (+ `PUBLIC_BASE_URL`) | Real meeting bot via Recall.ai (ADR-0001) |
 | `ASSEMBLYAI_API_KEY` | Streaming STT (ADR-0004; `DEEPGRAM_API_KEY` stays swappable) |
 | `ANTHROPIC_API_KEY` | Claim extraction (Haiku), judging/scoring/receipts (Opus) |
-| `BRAVE_API_KEY` *or* `SEARXNG_URL` | Full web coverage for search (optional — see below) |
+| `BRAVE_API_KEY` | Full web coverage for search — free tier, recommended (see below) |
 | `DATABASE_URL` | Neon Postgres persistence (ADR-0003) |
 | `REDIS_URL` | Upstash Redis hot state / queues / pub-sub (ADR-0003) |
 
@@ -74,7 +74,9 @@ claim → query planning → federated backends → reciprocal rank fusion
       → BM25 passage ranking with claim-aware boosts → top passages
 ```
 
-It runs with **no API keys** (Wikipedia/Wikidata) and gets substantially better with one real web backend — [Brave Search](https://brave.com/search/api/) (free tier) or a self-hosted [SearXNG](https://docs.searxng.org/). Ranking favors primary sources, weighs recency only for time-sensitive claims, drops passages that mention none of the claim's entities or numbers, and always issues a contradiction-seeking query so we hunt counter-evidence rather than confirmation.
+It runs with **no API keys** (Wikipedia/Wikidata), but Wikipedia alone is imprecise on statistical claims. The chosen general-web backend is [Brave Search](https://brave.com/search/api/) on its free tier: an independent index (not a Google/Bing reseller, so it federates as a genuinely different retriever) that returns publication dates for recency scoring. A self-hosted [SearXNG](https://docs.searxng.org/) is supported for deployments that prefer no third-party key.
+
+Brave's free tier allows ~1 query/second, so it is metered rather than left to collect 429s: slots are reserved synchronously across sessions, a claim skips the backend instead of blowing its verdict deadline waiting for one, and a quota skip is deliberately *not* counted as a backend failure — otherwise running low on quota would trip the circuit breaker and take a healthy backend offline. Ranking favors primary sources, weighs recency only for time-sensitive claims, drops passages that mention none of the claim's entities or numbers, and always issues a contradiction-seeking query so we hunt counter-evidence rather than confirmation.
 
 Measure quality and latency yourself, on any claim:
 

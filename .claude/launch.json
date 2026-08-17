@@ -4,8 +4,11 @@
     {
       "name": "server",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["src/index.js"],
-      "port": 8080
+      "runtimeArgs": [
+        "src/index.js"
+      ],
+      "port": 8080,
+      "autoPort": true
     }
   ]
 }

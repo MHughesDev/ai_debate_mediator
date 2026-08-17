@@ -11,6 +11,8 @@ import { extractArticle, normalizeDate } from '../src/search/extract.js';
 import { chunkPassages, rankPassages, recencyFactor } from '../src/search/rank.js';
 import { canonicalUrl, dedupeKey, domainAuthority, extractEntities, extractNumbers, fold } from '../src/search/text.js';
 import { createSearchEngine } from '../src/search/engine.js';
+import { createRateLimiter, QuotaSkip } from '../src/search/rateLimiter.js';
+import { createBraveBackend, _resetBraveLimiterForTests } from '../src/search/backends/brave.js';
 import { cacheKey, _clearMemoryCache } from '../src/search/cache.js';
 import { _resetStoreForTests } from '../src/state/store.js';
 import { createMemoryStore } from '../src/state/memoryStore.js';
@@ -329,4 +331,204 @@ test('engine returns nothing rather than guessing when no backend answers', asyn
   });
   const results = await engine.search('some claim nobody can check');
   assert.deepEqual(results, [], 'empty evidence -> the judge will return UNVERIFIED');
+});
+
+// ------------------------------------------------- quota metering (Brave)
+//
+// Brave is the primary general-web backend and its free tier is ~1 query/sec.
+// The failure mode being guarded against is indirect: naive parallelism earns
+// 429s, 429s look like backend failures, failures trip the circuit breaker, and
+// a perfectly healthy backend goes dark for a whole cooldown window. So both
+// the metering and the "a skip is not a failure" rule are load-bearing.
+
+test('rate limiter hands out distinct slots to concurrent callers', () => {
+  const limiter = createRateLimiter({ minIntervalMs: 1000 });
+  // Slots are reserved synchronously, so callers racing on the same tick
+  // cannot be handed the same instant.
+  assert.equal(limiter.reserve(), 0, 'first caller goes immediately');
+  assert.ok(Math.abs(limiter.reserve() - 1000) < 20, 'second waits one interval');
+  assert.ok(Math.abs(limiter.reserve() - 2000) < 20, 'third waits two');
+});
+
+test('rate limiter tells a caller to skip rather than blow its deadline', async () => {
+  const limiter = createRateLimiter({ minIntervalMs: 5000 });
+  limiter.reserve(); // consume the immediate slot
+  // The next slot lands 5s out, but this claim's verdict is due in 200ms.
+  assert.equal(limiter.reserve({ deadlineAt: Date.now() + 200 }), null, 'reports skip');
+  assert.equal(await limiter.acquire({ deadlineAt: Date.now() + 200 }), false);
+});
+
+test('rate limiter waits out its interval, and backs off further after a 429', async () => {
+  const limiter = createRateLimiter({ minIntervalMs: 60 });
+  const started = Date.now();
+  assert.equal(await limiter.acquire({ deadlineAt: Date.now() + 5000 }), true);
+  assert.equal(await limiter.acquire({ deadlineAt: Date.now() + 5000 }), true);
+  assert.ok(Date.now() - started >= 55, 'second acquire waited for its slot');
+
+  limiter.penalize(4000);
+  assert.equal(limiter.reserve({ deadlineAt: Date.now() + 500 }), null, 'vendor backoff hint respected');
+});
+
+test('brave backend normalizes results and reports auth failure actionably', async () => {
+  const cfg = { ...config, braveApiKey: 'test-key', searchUserAgent: 'test-agent' };
+  let seenUrl = null;
+  let seenHeaders = null;
+  const ok = async (url, opts) => {
+    seenUrl = url;
+    seenHeaders = opts.headers;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        web: {
+          results: [
+            {
+              title: 'EV sales',
+              url: 'https://iea.org/ev',
+              description: 'Global EV sales <strong>tripled</strong>   since 2020.',
+              page_age: '3 days ago',
+            },
+            { title: 'No date', url: 'https://example.com/x', description: 'Plain text.' },
+          ],
+        },
+      }),
+    };
+  };
+
+  // Inject a free-running limiter: this test is about parsing, not metering.
+  const fast = createRateLimiter({ minIntervalMs: 1 });
+  const backend = createBraveBackend(cfg, { fetchImpl: ok, limiter: fast });
+  assert.equal(backend.enabled, true, 'enabled by the presence of a key');
+  const results = await backend.search('global EV sales', { limit: 3, deadlineAt: Date.now() + 5000 });
+
+  assert.equal(seenHeaders['X-Subscription-Token'], 'test-key');
+  assert.equal(seenHeaders['user-agent'], 'test-agent', 'we identify ourselves honestly');
+  assert.match(seenUrl, /q=global%20EV%20sales/);
+  assert.equal(results.length, 2);
+  assert.equal(results[0].snippet, 'Global EV sales tripled since 2020.', 'markup stripped, whitespace collapsed');
+  // Relative ages become absolute so recency scoring can actually use them.
+  const ageMs = Date.now() - new Date(results[0].publishedAt).getTime();
+  assert.ok(ageMs > 2.5 * 864e5 && ageMs < 3.5 * 864e5, 'relative age resolved to about three days');
+  assert.equal(results[1].publishedAt, null, 'a missing date stays null rather than being invented');
+
+  const unauthorized = createBraveBackend(cfg, {
+    limiter: fast,
+    fetchImpl: async () => ({ ok: false, status: 401 }),
+  });
+  await assert.rejects(
+    () => unauthorized.search('x', { deadlineAt: Date.now() + 5000 }),
+    /BRAVE_API_KEY/,
+    'auth failure names the variable to fix',
+  );
+});
+
+test('brave backend backs off on 429 and skips when out of quota', async () => {
+  const cfg = { ...config, braveApiKey: 'test-key' };
+  const limiter = createRateLimiter({ minIntervalMs: 10 });
+  const throttled = createBraveBackend(cfg, {
+    limiter,
+    fetchImpl: async () => ({ ok: false, status: 429, headers: { get: () => '3' } }),
+  });
+
+  await assert.rejects(() => throttled.search('x', { deadlineAt: Date.now() + 5000 }), /rate limited/);
+  // The vendor's own retry-after hint now shapes our scheduling.
+  assert.equal(limiter.reserve({ deadlineAt: Date.now() + 500 }), null, 'backed off by about three seconds');
+
+  // With no slot available before the deadline, the backend declines instead
+  // of stalling the claim.
+  let called = false;
+  const starved = createBraveBackend(cfg, {
+    limiter,
+    fetchImpl: async () => {
+      called = true;
+      return { ok: true, status: 200, json: async () => ({}) };
+    },
+  });
+  await assert.rejects(
+    () => starved.search('x', { deadlineAt: Date.now() + 100 }),
+    (err) => err.skip === true && err.name === 'QuotaSkip',
+    'a starved backend raises a skip, not a failure',
+  );
+  assert.equal(called, false, 'and never spends the HTTP request');
+});
+
+test('engine spends Brave quota only on the highest-value query', async () => {
+  _clearMemoryCache();
+  const asked = { brave: [], wikipedia: [] };
+  const mk = (name, extra = {}) => ({
+    name,
+    enabled: true,
+    ...extra,
+    async search(q) {
+      asked[name].push(q);
+      return [{ title: `${name} result`, url: `https://${name}.example/${asked[name].length}`, snippet: 'x' }];
+    },
+  });
+  // maxQueries of 1 is what the real Brave backend declares on the free tier.
+  const engine = createSearchEngine({
+    config: { ...config, searchesPerClaim: 3 },
+    backends: [mk('brave', { maxQueries: 1 }), mk('wikipedia')],
+    fetchImpl: async () => {
+      throw new Error('no network in this test');
+    },
+  });
+  await engine.search('Global EV sales tripled between 2020 and 2023 according to the IEA.', { useCache: false });
+
+  assert.equal(asked.brave.length, 1, 'the metered backend spends exactly one query');
+  assert.ok(asked.wikipedia.length > 1, 'the keyless backend still runs the full plan');
+  assert.equal(asked.brave[0], asked.wikipedia[0], 'and it gets the core query, not a speculative one');
+});
+
+test('a quota skip does not trip the circuit breaker, but real failures do', async () => {
+  _clearMemoryCache();
+  const backends = [
+    {
+      name: 'brave',
+      enabled: true,
+      search: async () => {
+        throw new QuotaSkip('brave: no rate-limit slot before deadline');
+      },
+    },
+    {
+      name: 'broken',
+      enabled: true,
+      search: async () => {
+        throw new Error('HTTP 500');
+      },
+    },
+  ];
+  const engine = createSearchEngine({
+    config: { ...config, searchesPerClaim: 1 },
+    backends,
+    fetchImpl: async () => {
+      throw new Error('no network in this test');
+    },
+  });
+
+  for (let i = 0; i < 3; i += 1) {
+    await engine.search(`unrelated claim number ${i} about something`, { useCache: false });
+  }
+
+  const state = engine.breakerState();
+  assert.ok(!state.brave?.openUntil, 'skipping for quota never penalizes a healthy backend');
+  assert.ok(state.broken?.openUntil > Date.now(), 'a genuinely failing backend is switched off');
+});
+
+test('Brave quota is metered per process, not per session', async () => {
+  // Engines are built per debate session, but the quota belongs to the account.
+  // Two sessions' backends must therefore draw on one meter.
+  _resetBraveLimiterForTests();
+  const cfg = { ...config, braveApiKey: 'test-key', braveQps: 1 };
+  const sessionA = createBraveBackend(cfg, { fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({}) }) });
+  const sessionB = createBraveBackend(cfg, { fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({}) }) });
+
+  await sessionA.search('claim one', { deadlineAt: Date.now() + 5000 });
+  // Session B now has no slot inside a tight deadline, because session A just
+  // spent it. With a per-engine limiter both would have fired at once.
+  await assert.rejects(
+    () => sessionB.search('claim two', { deadlineAt: Date.now() + 100 }),
+    (err) => err.skip === true,
+    'the second session sees what the first session already spent',
+  );
+  _resetBraveLimiterForTests();
 });

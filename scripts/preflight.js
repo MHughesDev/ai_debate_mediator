@@ -79,8 +79,18 @@ async function main() {
   // Our own search layer (ADR-0006): check each backend it will actually use.
   await check('Search: Brave', config.braveApiKey, async () => {
     const { createBraveBackend } = await import('../src/search/backends/brave.js');
-    const results = await createBraveBackend(config).search('IEA global EV sales 2023', { limit: 3 });
-    return `${results.length} results`;
+    const backend = createBraveBackend(config);
+    const results = await backend.search('IEA global EV sales 2023', { limit: 3 });
+    if (!results.length) throw new Error('key accepted but returned 0 results — check plan/quota');
+    // Report the metering too: a valid key that is about to blow its monthly
+    // quota is not actually a passing check, and this is the number to reason
+    // about before a live debate.
+    const dated = results.filter((r) => r.publishedAt).length;
+    const perHour = config.braveMaxQueries * 40;
+    return (
+      `${results.length} results (${dated} dated) — ` +
+      `${config.braveMaxQueries} query/claim at ${config.braveQps}/sec, ~${perHour} queries per hour-long debate`
+    );
   });
 
   await check('Search: Google CSE', config.googleCseKey && config.googleCseCx, async () => {
