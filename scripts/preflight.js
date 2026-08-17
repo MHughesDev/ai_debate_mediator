@@ -76,6 +76,46 @@ async function main() {
     return `${(data.results || []).length} results`;
   });
 
+  // Our own search layer (ADR-0006): check each backend it will actually use.
+  await check('Search: Brave', config.braveApiKey, async () => {
+    const { createBraveBackend } = await import('../src/search/backends/brave.js');
+    const results = await createBraveBackend(config).search('IEA global EV sales 2023', { limit: 3 });
+    return `${results.length} results`;
+  });
+
+  await check('Search: Google CSE', config.googleCseKey && config.googleCseCx, async () => {
+    const { createGoogleCseBackend } = await import('../src/search/backends/googleCse.js');
+    const results = await createGoogleCseBackend(config).search('IEA global EV sales 2023', { limit: 3 });
+    return `${results.length} results`;
+  });
+
+  await check('Search: SearXNG', config.searxngUrl, async () => {
+    const { createSearxngBackend } = await import('../src/search/backends/searxng.js');
+    const results = await createSearxngBackend(config).search('IEA global EV sales 2023', { limit: 3 });
+    return `${results.length} results from ${config.searxngUrl}`;
+  });
+
+  // Wikipedia needs no key, so it is always exercised — it is the floor that
+  // guarantees the fact-checker can always search something.
+  await check('Search: Wikipedia', config.searchWikipediaEnabled ? 'builtin' : '', async () => {
+    const { createWikipediaBackend } = await import('../src/search/backends/wikipedia.js');
+    const results = await createWikipediaBackend(config).search('Great Wall of China visible from space', { limit: 3 });
+    if (!results.length) throw new Error('no results (network blocked?)');
+    return `${results.length} results (no key required)`;
+  });
+
+  // End-to-end retrieval: the number that actually matters for verdict latency.
+  await check('Search: end-to-end', config.searchProvider === 'own' ? 'own' : '', async () => {
+    const { createOwnSearchProvider } = await import('../src/providers/search/own.js');
+    const provider = createOwnSearchProvider({ config });
+    const started = t();
+    const results = await provider.search('The Great Wall of China is visible from the Moon.', { maxResults: 3 });
+    const ms = t() - started;
+    if (!results.length) throw new Error('no evidence returned — every verdict would be UNVERIFIED');
+    const over = ms > config.searchDeadlineMs ? ` OVER BUDGET (${config.searchDeadlineMs}ms)` : '';
+    return `${results.length} passages via [${provider.backends.join(', ')}] in ${ms}ms${over}`;
+  });
+
   await check('Recall.ai', config.recallApiKey, async () => {
     const res = await fetch(`https://${config.recallRegion}.recall.ai/api/v1/bot/?limit=1`, {
       headers: { Authorization: `Token ${config.recallApiKey}` },

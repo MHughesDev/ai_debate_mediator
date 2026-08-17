@@ -6,6 +6,8 @@ import { startSessionPipeline } from '../src/pipeline/session.js';
 import { stopPipeline } from '../src/pipeline/runtime.js';
 import { createMockMeetingProvider } from '../src/providers/meeting/mock.js';
 import { createMockSttProvider } from '../src/providers/stt/mock.js';
+import { createMockLlm } from '../src/providers/llm/mock.js';
+import { createMockSearchProvider } from '../src/providers/search/mock.js';
 import { getTranscriptDelta } from '../src/pipeline/transcript.js';
 import { getSpeakers } from '../src/pipeline/speakers.js';
 import { getDb } from '../src/db/postgres.js';
@@ -14,10 +16,17 @@ import { parseChatCommand } from '../src/pipeline/chatCommands.js';
 
 const FAST = { speedFactor: 50 }; // 60s fixture -> ~1.2s
 
+// Explicit mocks everywhere so tests stay hermetic: the default search
+// provider is now our own engine, which would otherwise reach the network.
 function fastProviders() {
   return {
     meetingProvider: createMockMeetingProvider(FAST),
     sttProvider: createMockSttProvider({ latencyMs: 5 }),
+    brainOptions: {
+      llm: createMockLlm(),
+      searchProvider: createMockSearchProvider({ latencyMs: 5 }),
+      extractIntervalMs: 200,
+    },
   };
 }
 

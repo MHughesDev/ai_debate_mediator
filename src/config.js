@@ -17,7 +17,9 @@ export const config = {
   // Vendor providers (each has a mock)
   meetingProvider: env.MEETING_PROVIDER || (env.RECALL_API_KEY ? 'recall' : 'mock'),
   sttProvider: env.STT_PROVIDER || (env.DEEPGRAM_API_KEY ? 'deepgram' : env.ASSEMBLYAI_API_KEY ? 'assemblyai' : 'mock'),
-  searchProvider: env.SEARCH_PROVIDER || (env.TAVILY_API_KEY ? 'tavily' : env.EXA_API_KEY ? 'exa' : 'mock'),
+  // Our own search layer (ADR-0006) is the default: it needs no API key
+  // (Wikipedia/Wikidata) and improves as backends are configured.
+  searchProvider: env.SEARCH_PROVIDER || (env.TAVILY_API_KEY ? 'tavily' : env.EXA_API_KEY ? 'exa' : 'own'),
   llmProvider: env.LLM_PROVIDER || (env.ANTHROPIC_API_KEY ? 'anthropic' : 'mock'),
 
   // Vendor credentials
@@ -28,6 +30,32 @@ export const config = {
   anthropicApiKey: env.ANTHROPIC_API_KEY || '',
   tavilyApiKey: env.TAVILY_API_KEY || '',
   exaApiKey: env.EXA_API_KEY || '',
+
+  // ---- Own search engine (ADR-0006) ----
+  // Backends: Wikipedia needs no key; the rest activate when configured.
+  braveApiKey: env.BRAVE_API_KEY || '',
+  googleCseKey: env.GOOGLE_CSE_KEY || '',
+  googleCseCx: env.GOOGLE_CSE_CX || '',
+  searxngUrl: env.SEARXNG_URL || '',
+  searxngToken: env.SEARXNG_TOKEN || '',
+  searchWikipediaEnabled: bool(env.SEARCH_WIKIPEDIA, true),
+  searchBackends: (env.SEARCH_BACKENDS || '').split(',').filter(Boolean),
+  // Latency budget. Verdict budget is 8-20s end to end (SPEC §3.1), so search
+  // gets a hard ceiling and degrades to partial evidence rather than stalling.
+  searchDeadlineMs: int(env.SEARCH_DEADLINE_MS, 4500),
+  searchRetrieveMs: int(env.SEARCH_RETRIEVE_MS, 1800),
+  searchBackendTimeoutMs: int(env.SEARCH_BACKEND_TIMEOUT_MS, 1500),
+  searchFetchDeadlineMs: int(env.SEARCH_FETCH_DEADLINE_MS, 2500),
+  searchMaxCandidates: int(env.SEARCH_MAX_CANDIDATES, 10),
+  searchMaxFetch: int(env.SEARCH_MAX_FETCH, 5),
+  searchMaxPerDomain: int(env.SEARCH_MAX_PER_DOMAIN, 2),
+  searchMaxPageBytes: int(env.SEARCH_MAX_PAGE_BYTES, 1200000),
+  searchCacheTtlSec: int(env.SEARCH_CACHE_TTL_SEC, 60 * 60 * 6),
+  searchBreakerCooldownMs: int(env.SEARCH_BREAKER_COOLDOWN_MS, 60000),
+  // Identify the bot honestly to the sites we read.
+  searchUserAgent:
+    env.SEARCH_USER_AGENT ||
+    'AIDebateMediatorBot/1.0 (+https://github.com/MHughesDev/ai_debate_mediator)',
 
   // Models (SPEC: extraction is a fast Haiku-class loop; judging/scoring on Opus)
   extractorModel: env.EXTRACTOR_MODEL || 'claude-haiku-4-5',

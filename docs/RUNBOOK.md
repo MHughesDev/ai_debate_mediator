@@ -12,9 +12,9 @@
 | Key | Where | Notes |
 |---|---|---|
 | `RECALL_API_KEY` | recall.ai dashboard | Pick region (`RECALL_REGION`, default us-west-2) close to your users; billing per bot-hour |
-| `DEEPGRAM_API_KEY` / `ASSEMBLYAI_API_KEY` | deepgram.com / assemblyai.com | Phase 1 bake-off: run one real debate on each (`STT_PROVIDER=deepgram|assemblyai`), compare latency + crosstalk accuracy, keep the winner |
+| `ASSEMBLYAI_API_KEY` | assemblyai.com | Chosen in ADR-0004. `DEEPGRAM_API_KEY` + `STT_PROVIDER=deepgram` switches vendors with no code change if latency disappoints on real debate audio |
 | `ANTHROPIC_API_KEY` | console.anthropic.com | Models overridable: `EXTRACTOR_MODEL` (default claude-haiku-4-5), `JUDGE_MODEL`/`SCORER_MODEL`/`RECEIPTS_MODEL` (default claude-opus-5) |
-| `TAVILY_API_KEY` / `EXA_API_KEY` | tavily.com / exa.ai | Phase 2 bake-off, same pattern (`SEARCH_PROVIDER`) |
+| `BRAVE_API_KEY` *or* `SEARXNG_URL` | brave.com/search/api (free tier) / self-hosted | **Optional but high value.** Search runs keyless on Wikipedia; one real web backend is the biggest single upgrade to fact-check quality (ADR-0006). `GOOGLE_CSE_KEY`+`GOOGLE_CSE_CX` also supported |
 
 Provider selection is automatic from key presence; override with `MEETING_PROVIDER` / `STT_PROVIDER` / `SEARCH_PROVIDER` / `LLM_PROVIDER` (`mock` forces offline mode).
 
@@ -57,5 +57,6 @@ One real API call per vendor; each line reports OK / FAIL / SKIPPED with the fai
 - **Costs**: `GET /api/sessions/:id/costs` live during a call; final estimate lands in receipts and the `session_costs` table. Rates are env-tunable (`COST_*` in [src/config.js](../src/config.js)). Expected ~$3–7 per 1-hr debate.
 - **Dials via env**: extraction cadence (`EXTRACT_INTERVAL_MS`), verification concurrency/timeout, confidence bars (`FALSE_VERDICT_MIN_CONFIDENCE` etc.), dodge timer (`DODGE_TIMEOUT_MS`).
 - **Load test**: `node scripts/loadtest.js https://<host> 3` (3 concurrent debates, p95 event latency must stay under the 500 ms display budget).
+- **Search quality**: `node scripts/searchBench.js "<a real claim>"` prints the exact passages the judge would receive, with per-claim latency. Re-run it after changing backends or ranking — reading the passages and asking "would this settle the claim?" is the only honest quality check. Wikipedia-only retrieval is usable but imprecise on statistical claims; adding `BRAVE_API_KEY` or `SEARXNG_URL` is the fix.
 - **Outside-user debates (Phase 4 milestone)**: run 3 real debates, then review every FALSE/MISLEADING verdict against its sources (`claims` + `verdicts` tables) — tighten `FALSE_VERDICT_MIN_CONFIDENCE` upward if any wrong FALSE appeared.
 - **Consent**: the bot is clearly named "AI Debate Mediator"; have the host announce it and get participant consent where required (SPEC §7 platform-ToS risk).

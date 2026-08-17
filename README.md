@@ -56,13 +56,31 @@ Adding env vars switches the same code paths from mocks to real vendors (selecti
 | Env var | Enables |
 |---|---|
 | `RECALL_API_KEY` (+ `PUBLIC_BASE_URL`) | Real meeting bot via Recall.ai (ADR-0001) |
-| `DEEPGRAM_API_KEY` or `ASSEMBLYAI_API_KEY` | Streaming STT (ADR-0004 bake-off) |
+| `ASSEMBLYAI_API_KEY` | Streaming STT (ADR-0004; `DEEPGRAM_API_KEY` stays swappable) |
 | `ANTHROPIC_API_KEY` | Claim extraction (Haiku), judging/scoring/receipts (Opus) |
-| `TAVILY_API_KEY` or `EXA_API_KEY` | Verification web search |
+| `BRAVE_API_KEY` *or* `SEARXNG_URL` | Full web coverage for search (optional — see below) |
 | `DATABASE_URL` | Neon Postgres persistence (ADR-0003) |
 | `REDIS_URL` | Upstash Redis hot state / queues / pub-sub (ADR-0003) |
 
 Step-by-step deployment (Render now, Cloud Run cutover later): [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+## Search: our own retrieval layer
+
+Fact-check evidence comes from a search service we own ([ADR-0006](docs/decisions/0006-own-search-retrieval-layer.md)), not a paid API:
+
+```
+claim → query planning → federated backends → reciprocal rank fusion
+      → parallel fetch (deadline-bounded) → readability extraction
+      → BM25 passage ranking with claim-aware boosts → top passages
+```
+
+It runs with **no API keys** (Wikipedia/Wikidata) and gets substantially better with one real web backend — [Brave Search](https://brave.com/search/api/) (free tier) or a self-hosted [SearXNG](https://docs.searxng.org/). Ranking favors primary sources, weighs recency only for time-sensitive claims, drops passages that mention none of the claim's entities or numbers, and always issues a contradiction-seeking query so we hunt counter-evidence rather than confirmation.
+
+Measure quality and latency yourself, on any claim:
+
+```bash
+node scripts/searchBench.js "The Great Wall of China is visible from the Moon."
+```
 
 ## Design contract
 

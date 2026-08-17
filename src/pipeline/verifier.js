@@ -85,8 +85,13 @@ export function startVerifier(sessionId, { llm, searchProvider, concurrency = co
     if (!claim) return;
     try {
       await publishEvent(sessionId, 'thought', { text: `searching: “${claim.text.slice(0, 80)}”…` });
-      const queries = [claim.text];
-      if (config.searchesPerClaim > 1) queries.push(`${claim.text} fact check evidence`);
+      // Providers that plan their own queries (our engine) get the raw claim
+      // once; simple providers get hand-built variants for recall.
+      const queries = searchProvider.plansQueries
+        ? [claim.text]
+        : config.searchesPerClaim > 1
+          ? [claim.text, `${claim.text} fact check evidence`]
+          : [claim.text];
 
       const resultsNested = await withTimeout(
         Promise.all(queries.map((q) => searchProvider.search(q, { maxResults: 4 }).catch(() => []))),
