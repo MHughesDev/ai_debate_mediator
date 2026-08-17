@@ -18,6 +18,14 @@
 
 Provider selection is automatic from key presence; override with `MEETING_PROVIDER` / `STT_PROVIDER` / `SEARCH_PROVIDER` / `LLM_PROVIDER` (`mock` forces offline mode).
 
+**Validate every key before trusting it in a call.** Copy `.env.example` → `.env`, paste keys, then:
+
+```bash
+npm run preflight
+```
+
+One real API call per vendor; each line reports OK / FAIL / SKIPPED with the failure reason (bad key, wrong `RECALL_REGION`, unreachable database). Non-zero exit only when a key is set but doesn't work. Run it again on the server after deploying — Render's shell or a redeploy log will show the same output.
+
 ## 3. Deploy to Render (dev/demo host)
 
 1. Push this repo to GitHub; in Render: **New → Blueprint** → select the repo ([render.yaml](../render.yaml)) — or create a single Docker web service manually (free plan).

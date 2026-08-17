@@ -43,7 +43,15 @@ node scripts/loadtest.js "" 3   # 3 concurrent debates + latency percentiles
 
 ## Going live
 
-Add env vars and the same code paths switch from mocks to real vendors (provider selection is automatic when a key is present):
+Copy `.env.example` to `.env`, fill in whatever keys you have, and validate them:
+
+```bash
+npm run preflight
+```
+
+Preflight makes one real API call per configured vendor and reports OK / FAIL / SKIPPED per line, so a wrong key or region is caught in seconds instead of mid-debate. Vendors with no key are skipped and keep running as mocks — a fully mocked setup passes.
+
+Adding env vars switches the same code paths from mocks to real vendors (selection is automatic when a key is present):
 
 | Env var | Enables |
 |---|---|
