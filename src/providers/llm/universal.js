@@ -24,10 +24,16 @@ export function createUniversalLlm({
   env = process.env,
   fetchImpl,
   baseUrl: baseUrlOverride,
+  globalProviderId,
 } = {}) {
   const spec = getProviderSpec(providerId);
 
-  const baseUrl = (baseUrlOverride || config.llmBaseUrl || spec.baseUrl || '').trim();
+  // LLM_BASE_URL, LLM_API_KEY and LLM_MODEL all describe the DEFAULT provider.
+  // A task routed to a different vendor must not inherit them, or judging on
+  // Anthropic would be pointed at the local server that serves extraction.
+  const isDefaultProvider = !globalProviderId || spec.id === globalProviderId;
+  const globalBaseUrl = isDefaultProvider ? env.LLM_BASE_URL || config.llmBaseUrl : '';
+  const baseUrl = (baseUrlOverride || globalBaseUrl || spec.baseUrl || '').trim();
   if (!baseUrl) {
     throw new Error(
       `LLM_PROVIDER=${spec.id} (${spec.label}) needs LLM_BASE_URL to be set — it has no fixed endpoint.`,
@@ -36,7 +42,8 @@ export function createUniversalLlm({
 
   // A generic LLM_API_KEY works for every provider, so a gateway or an unusual
   // setup does not need us to know its vendor-specific variable name.
-  const apiKey = (env[spec.apiKeyEnv] || config.llmApiKey || '').trim();
+  const globalKey = isDefaultProvider ? env.LLM_API_KEY || config.llmApiKey : '';
+  const apiKey = (env[spec.apiKeyEnv] || globalKey || '').trim();
   if (!apiKey && !spec.keyOptional) {
     throw new Error(
       `LLM_PROVIDER=${spec.id} (${spec.label}) needs ${spec.apiKeyEnv} (or LLM_API_KEY). Get one at ${spec.docs}`,
@@ -45,7 +52,7 @@ export function createUniversalLlm({
 
   const models = {};
   for (const task of TASKS) {
-    const model = resolveModel(spec, task, env);
+    const model = resolveModel(spec, task, env, globalProviderId);
     if (!model) {
       const hint = spec.modelHint ? ` — ${spec.modelHint}` : '';
       throw new Error(

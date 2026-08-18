@@ -22,8 +22,11 @@ The request included consumer subscriptions (ChatGPT Plus, Claude Pro/Max).
 Those are separate products from the APIs and expose no endpoint an application
 may call; there is no supported credential that turns one into API access.
 Building a "subscription mode" would mean shipping something that cannot work.
-The honest substitutes are recorded instead: pay-as-you-go API billing, free
-tiers (Groq, Gemini), and self-hosting, which has no per-token cost at all.
+The honest substitutes are recorded instead: pay-as-you-go API billing and
+self-hosting, which has no per-token cost at all. Note that "use a free tier"
+is mostly not a substitute either — extraction sustains ~12 requests/minute,
+which is above Cerebras (5 RPM) and Fireworks (10 RPM), while Groq's 1,000/day
+and OpenRouter's 50/day are spent by a single debate. See docs/VENDOR-TIERS.md.
 
 ## Decision Drivers
 - One switch, not a code change, to move between backends
@@ -101,3 +104,43 @@ requests and then report the wrong problem.
 headers and bodies; the full downgrade ladder including a model that wraps its
 answer in a markdown fence; refusals and unparseable output degrading to the
 documented safe result; and 401 propagating without downgrade attempts.
+
+## Amendment (2026-08-17): tasks route to different backends
+
+Running a full debate on a self-hosted `qwen2.5:7b` produced a precise failure.
+Extraction was fine — 18 claims from 16 utterances. Search was fine — the
+deliberately false claim about EV lifetime emissions retrieved a Nature life
+cycle study and matching Wikipedia passages. **Judging was not.** The model
+would not commit to FALSE with cited sources, so `gateVerdict` correctly
+downgraded it to `UNVERIFIED — "Insufficient sourced evidence"`. The gate did
+its job; the model could not clear the bar it sets, and a fact-checker that
+never says FALSE is not a fact-checker.
+
+The economics make the fix obvious once the numbers are written down:
+
+| Task | Calls per debate | Needs |
+|---|---|---|
+| Extraction | ~720 | cheap and fast; a small local model is fine |
+| Judging | ~40 | the strongest model available — it decides what appears on screen |
+| Receipts | 1 | quality, but once |
+
+Chosen: **each task resolves its own provider, model and endpoint**, defaulting
+to the global one. `JUDGE_PROVIDER` / `JUDGE_MODEL` / `JUDGE_BASE_URL` (and the
+equivalents for extractor and receipts) route one task without disturbing the
+rest. Two shapes are now practical that were not before: local extraction with
+hosted judging for a few cents a debate, and two local servers on different
+ports — which matters because one server serialises every request behind one
+loaded model, so `verifyConcurrency` buys nothing against a single instance.
+
+Three rules keep the routing from surprising anyone:
+1. `LLM_MODEL`, `LLM_BASE_URL` and `LLM_API_KEY` describe the **default**
+   provider only. A routed task falls back to its own vendor's defaults instead
+   of inheriting them — otherwise a local model id gets sent to a hosted vendor,
+   which fails as a confusing 404 at the worst possible moment.
+2. Instances are keyed by **endpoint as well as vendor**, so two local servers
+   are two instances rather than one shared by accident.
+3. Every backend is built eagerly at startup, so a misconfigured route fails
+   with an actionable message rather than mid-debate on first use.
+
+`/healthz` reports the per-task routing, because "which model judged this claim"
+is the first question worth asking when a verdict looks wrong.

@@ -89,7 +89,7 @@ export const config = {
     'AIDebateMediatorBot/1.0 (+https://github.com/MHughesDev/ai_debate_mediator)',
 
   // Models are resolved per provider in src/providers/llm/registry.js:
-  // EXTRACTOR_MODEL / JUDGE_MODEL / SCORER_MODEL / RECEIPTS_MODEL override the
+  // EXTRACTOR_MODEL / JUDGE_MODEL / RECEIPTS_MODEL override the
   // provider's defaults. Extraction is the fast, cheap loop; judging, scoring
   // and receipts decide what goes on screen and use the strong model.
 

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { resolveProviderId, resolveModel, getProviderSpec, PROVIDERS } from '../src/providers/llm/registry.js';
 import { createUniversalLlm } from '../src/providers/llm/universal.js';
+import { getLlmProvider } from '../src/providers/llm/index.js';
 import { extractJson } from '../src/providers/llm/dialects/json.js';
 import { toGeminiSchema } from '../src/providers/llm/dialects/gemini.js';
 
@@ -390,4 +391,81 @@ test('a provider that cannot list models says so rather than failing', async (t)
     baseUrl: `${fake.base}/v1`,
   });
   assert.equal(await llm.listModels(), null, 'null means unknown, not broken');
+});
+
+// ------------------------------------------------------ per-task routing
+//
+// Extraction is ~720 calls per debate and a local 7B handles it; judging is ~40
+// calls where that same model will not commit to FALSE with cited sources, so
+// the credibility gate downgrades a correct FALSE to UNVERIFIED. Routing the
+// judge alone to a stronger backend is the cheap fix, so it has to work.
+
+test('tasks can be routed to different backends', async (t) => {
+  const local = await startFakeLlm();
+  const hosted = await startFakeLlm();
+  t.after(async () => {
+    await local.close();
+    await hosted.close();
+  });
+
+  const llm = getLlmProvider({
+    env: {
+      LLM_PROVIDER: 'custom',
+      LLM_MODEL: 'local-7b',
+      LLM_BASE_URL: `${local.base}/v1`,
+      JUDGE_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-ant',
+      JUDGE_MODEL: 'claude-haiku-4-5',
+      JUDGE_BASE_URL: hosted.base,
+    },
+  });
+
+  await llm.extractClaims({ speakers: ['A'], chunkText: 'A: something factual.' });
+  await llm.judgeClaim({ claim: CLAIM, results: [] });
+
+  assert.equal(local.requests.length, 1, 'extraction stayed local');
+  assert.equal(local.requests[0].body.model, 'local-7b');
+  assert.equal(hosted.requests.length, 1, 'judging went to the other backend');
+  assert.equal(hosted.requests[0].body.model, 'claude-haiku-4-5');
+  assert.equal(hosted.requests[0].headers['x-api-key'], 'sk-ant', 'and used that backend own auth');
+
+  const info = llm.describe();
+  assert.equal(info.routed, true, 'health reports that routing is active');
+  assert.equal(info.tasks.extractor, 'custom:local-7b');
+  assert.equal(info.tasks.judge, 'anthropic:claude-haiku-4-5');
+});
+
+test('a local model id never leaks to a hosted backend', async (t) => {
+  // LLM_MODEL names a model on the DEFAULT provider. Sending "qwen2.5:7b" to
+  // Anthropic because it happened to be the global default would be a confusing
+  // 404 at the worst moment.
+  const local = await startFakeLlm();
+  t.after(() => local.close());
+
+  const llm = getLlmProvider({
+    env: {
+      LLM_PROVIDER: 'custom',
+      LLM_MODEL: 'qwen2.5:7b-instruct',
+      LLM_BASE_URL: `${local.base}/v1`,
+      JUDGE_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-ant',
+    },
+  });
+  const info = llm.describe();
+  assert.equal(info.tasks.extractor, 'custom:qwen2.5:7b-instruct', 'the global model applies to its own provider');
+  assert.equal(
+    info.tasks.judge,
+    'anthropic:claude-opus-5',
+    "the routed task falls back to its own provider's default rather than inheriting a foreign model id",
+  );
+});
+
+test('routing is opt-in: one provider stays one provider', async (t) => {
+  const fake = await startFakeLlm();
+  t.after(() => fake.close());
+  const llm = getLlmProvider({
+    env: { LLM_PROVIDER: 'custom', LLM_MODEL: 'm', LLM_BASE_URL: `${fake.base}/v1` },
+  });
+  assert.equal(llm.describe().routed, false);
+  assert.equal(llm.kind, 'custom');
 });

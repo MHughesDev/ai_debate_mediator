@@ -18,7 +18,9 @@
 // Vendors rename and retire models constantly, so the defaults
 // below are a starting point, not a promise. LLM_MODEL overrides everything at
 // once (the usual case when self-hosting), EXTRACTOR_MODEL / JUDGE_MODEL /
-// SCORER_MODEL / RECEIPTS_MODEL override per task, and `npm run preflight`
+// RECEIPTS_MODEL override per task; EXTRACTOR_PROVIDER / JUDGE_PROVIDER /
+// RECEIPTS_PROVIDER route a task to a different backend entirely. `npm run
+// preflight`
 // reports exactly which model id it resolved and whether the vendor accepted it.
 //
 // `fast` runs the extraction loop (every few seconds, cost-sensitive); `strong`
@@ -232,7 +234,9 @@ export function getProviderSpec(id) {
  * servers are never auto-selected: we cannot tell whether one is running, and
  * silently failing to reach localhost is worse than an honest mock.
  */
-export function resolveProviderId(env = process.env) {
+export function resolveProviderId(env = process.env, task) {
+  const perTask = task && env[TASK_PROVIDER_ENV[task]];
+  if (perTask) return perTask.trim().toLowerCase();
   if (env.LLM_PROVIDER) return env.LLM_PROVIDER.trim().toLowerCase();
   const autoOrder = [
     'anthropic', 'openai', 'google', 'groq', 'deepseek',
@@ -249,10 +253,32 @@ export function resolveProviderId(env = process.env) {
 const TASK_ENV = {
   extractor: 'EXTRACTOR_MODEL',
   judge: 'JUDGE_MODEL',
-  scorer: 'SCORER_MODEL',
   receipts: 'RECEIPTS_MODEL',
 };
-const TASK_TIER = { extractor: 'fast', judge: 'strong', scorer: 'strong', receipts: 'strong' };
+const TASK_TIER = { extractor: 'fast', judge: 'strong', receipts: 'strong' };
+
+// Each task may be routed to a DIFFERENT backend. The reason is economic:
+// extraction is ~720 calls per debate and wants a cheap local model, while
+// judging is ~40 calls that decide what appears on screen and wants the
+// strongest model available. Scoring is deterministic and uses no LLM.
+const TASK_PROVIDER_ENV = {
+  extractor: 'EXTRACTOR_PROVIDER',
+  judge: 'JUDGE_PROVIDER',
+  receipts: 'RECEIPTS_PROVIDER',
+};
+
+// A task can also be pointed at its own endpoint — two local servers on
+// different ports (a small model for extraction, a large one for judging) is
+// the obvious case, since one server serialises requests behind one model.
+const TASK_BASE_URL_ENV = {
+  extractor: 'EXTRACTOR_BASE_URL',
+  judge: 'JUDGE_BASE_URL',
+  receipts: 'RECEIPTS_BASE_URL',
+};
+
+export function resolveTaskBaseUrl(task, env = process.env) {
+  return (env[TASK_BASE_URL_ENV[task]] || '').trim();
+}
 
 export const TASKS = Object.keys(TASK_ENV);
 
@@ -267,9 +293,11 @@ export const TASKS = Object.keys(TASK_ENV);
  * Returns '' when nothing is known; callers must surface that as a clear error
  * rather than sending an empty model id.
  */
-export function resolveModel(spec, task, env = process.env) {
+export function resolveModel(spec, task, env = process.env, globalProviderId) {
   const explicit = env[TASK_ENV[task]];
   if (explicit) return explicit.trim();
-  if (env.LLM_MODEL) return env.LLM_MODEL.trim();
+  // LLM_MODEL names a model on the DEFAULT provider. It must not leak to a task
+  // routed elsewhere, or a local model id gets sent to a hosted vendor.
+  if (env.LLM_MODEL && (!globalProviderId || spec.id === globalProviderId)) return env.LLM_MODEL.trim();
   return spec.models?.[TASK_TIER[task]] || '';
 }

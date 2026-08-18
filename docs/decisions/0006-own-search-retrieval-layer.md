@@ -117,3 +117,48 @@ Only the highest-value query per claim spends quota (`BRAVE_MAX_QUERIES`, defaul
 1). The query planner orders queries core-first, so the metered backend gets the
 query that matters and the keyless backends absorb the speculative ones. Both
 `BRAVE_QPS` and `BRAVE_MAX_QUERIES` are raised on a paid tier.
+
+## Amendment 2 (2026-08-17): Exa is the primary backend; Brave becomes optional
+
+The first amendment chose Brave for two reasons: a free tier, and publication
+dates. Verifying vendor terms in August 2026 found that **both halves of that
+reasoning had expired**.
+
+- Brave's free plan was discontinued on 2026-02-12. There is now no plan that
+  issues an API key without a subscription and a payment card, and the card is a
+  live billing instrument rather than an anti-fraud hold. The Search plan bills
+  $5.00/1,000 requests against $5 of monthly credit — roughly 1,000 requests, or
+  ~25 hour-long debates.
+- **Exa provides what Brave was chosen for, free.** $20 of credits on signup plus
+  $10 every month, recurring, with no payment method required (~1,400 searches),
+  and `publishedDate` is a documented first-class field on all result types.
+  Since March 2026 the text of the first 10 results is included at no extra cost.
+
+Chosen: **Exa is the primary general-web backend. Brave remains supported and
+federates when a key is present, but is no longer recommended by default.**
+
+The decision this amendment does not change is the one that mattered: because
+ADR-0006 built a federated layer rather than buying a vendor's, swapping the
+primary index was a new backend file plus a registry line, and the ranking,
+fusion, extraction and caching work all carried over untouched. That is the
+lock-in argument paying for itself within six months.
+
+### A term that shapes the code
+Brave permits only "transient storage required for operation" of the
+application; Exa is stricter, allowing only "temporary files that are
+automatically cached by your web browser". Our 6-hour result cache satisfies
+neither. Backends therefore declare `cacheRestricted`, and any answer such a
+backend contributed to is capped at `SEARCH_RESTRICTED_CACHE_TTL_SEC` (300s).
+The cap applies to the whole answer because after rank fusion one backend's
+contribution cannot be separated from another's, and the conservative reading is
+the only defensible one.
+
+### Also rejected, having been recommended earlier in error
+- **Google Programmable Search** — closed to new customers; shuts down
+  2027-01-01.
+- **SearXNG as a primary backend** — its limiter caps non-HTML formats at 4
+  requests per hour per IP, and self-hosting on a datacenter IP is blocked by
+  Google within a handful of searches. Retained only as a last-resort tier.
+- **Tavily** — returns no publication dates outside `topic=news`, and its terms
+  permit training on submitted queries, which for this tool means debate
+  transcript excerpts.
