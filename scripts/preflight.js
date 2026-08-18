@@ -114,6 +114,13 @@ async function main() {
     );
   });
 
+  await check('Search: Exa', config.exaApiKey, async () => {
+    const { createExaBackend } = await import('../src/search/backends/exa.js');
+    const results = await createExaBackend(config).search('IEA global EV sales 2023', { limit: 3 });
+    const dated = results.filter((r) => r.publishedAt).length;
+    return `${results.length} results (${dated} dated)`;
+  });
+
   await check('Search: Google CSE', config.googleCseKey && config.googleCseCx, async () => {
     const { createGoogleCseBackend } = await import('../src/search/backends/googleCse.js');
     const results = await createGoogleCseBackend(config).search('IEA global EV sales 2023', { limit: 3 });

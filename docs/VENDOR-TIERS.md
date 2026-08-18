@@ -45,10 +45,40 @@ separate products from the APIs and expose no endpoint an application can call.
 
 | Vendor | Reality |
 |---|---|
-| **Brave Search** | **No free plan.** A subscription is required before a key can be issued. $5.00 per 1,000 requests against **$5 of monthly credit** ≈ 1,000 requests/month ≈ 25 debates. Capacity **50 requests/second** — rate is not the constraint, spend is |
-| **Wikipedia / Wikidata** | Genuinely free, no key. The floor the engine always has. Weak on statistical claims |
-| **Google Programmable Search** | 100 queries/day free — covers ~2 debates/day |
-| **SearXNG** | Self-hosted, no vendor cost. You absorb the operational burden and the risk of upstream engines blocking you |
+| **Exa** | **The best free option.** $20 to start plus **$10 of credits every month, recurring, no card** ≈ 1,400 searches/month — and `publishedDate` is a documented, first-class field on all result types, which recency scoring needs. Since March 2026 text for the first 10 results is included free. Overage ~$0.007/query. **Its terms restrict caching harder than Brave's** — see below |
+| **Tavily** | 1,000 credits/month free, no card, but the weakest fit: **`published_date` is not in the documented response schema** (news topic only), and its terms let Tavily **train on your queries and outputs** — which for a debate tool means transcript excerpts |
+| **Serper** | 2,500 free queries, no card, then a **$50 minimum that expires in 6 months** (~$8.33/mo effective at our volume). Notably the **only one whose terms explicitly permit caching** "for as long as your use case requires" |
+| **Brave Search** | **No free plan** — a subscription is required before a key can be issued, and the card is now a live billing instrument, not just anti-fraud. $5.00 per 1,000 requests against $5 monthly credit ≈ 1,000 requests/month ≈ 25 debates. Capacity **50 requests/second** — rate is not the constraint, spend is. Set a spending cap in the dashboard; it is opt-in. **Its terms permit only "transient storage" of results** — see below |
+| **Wikipedia / Wikidata** | Genuinely free, no key. The floor the engine always has. Weak on statistical claims. New global rate limits landed in March/April 2026: **10 req/min for an unidentified IP, 200 req/min with a compliant User-Agent** — ours complies, which buys a 20x allowance for free |
+| **Google Programmable Search** | **Closed to new customers.** Existing keys work until **1 January 2027**; new Cloud projects get `403 PERMISSION_DENIED`. Only useful if you already hold a working key (then 100/day free is the best deal available — but plan the migration) |
+| **SearXNG** | **Not viable as a primary backend.** With the limiter on, any non-HTML format is capped at **4 requests per hour per IP**, so public instances are unusable; self-hosting on a datacenter IP gets blocked by Google within a handful of searches, and engine suspensions last an hour (rate-limit) to a day (CAPTCHA). Keep as a last-resort tier only |
+| **Bing Web Search** | **Retired** August 2025. The Azure successor feeds an agent rather than returning results, at ~$35/1,000 calls. Not viable |
+| **DuckDuckGo** | No usable API. The Instant Answer endpoint returns empty results for fact-check-shaped queries and never returns dates |
+
+### Vendor caching terms shape our code
+
+Brave forbids storing or caching results beyond "transient storage required for
+operation" without a plan granting storage rights (Enterprise only). Exa is
+stricter still, permitting only "temporary files that are automatically cached
+by your web browser" — a server-side cache is plainly not that.
+
+Our default 6-hour search cache sits on the wrong side of both, so backends
+declare `cacheRestricted` and any answer they contributed to is capped at
+`SEARCH_RESTRICTED_CACHE_TTL_SEC` (default 300s) instead. The cap applies to the
+whole answer, because after rank fusion one backend's contribution cannot be
+separated from another's. 300s still serves a claim repeated within a debate,
+which is the operational need, without accumulating a database of their results.
+
+If aggressive caching later matters, Serper is the only vendor whose terms
+clearly allow it, and Exa offers enterprise agreements.
+
+### One trap worth naming
+
+Gemini's Grounding with Google Search looks like free search, but its result
+URIs are `vertexaisearch.cloud.google.com` redirects rather than publisher URLs
+— useless for a fetch-and-extract pipeline — and its terms forbid interspersing
+other content with the grounded results, which is exactly what ranking passages
+into evidence cards does.
 
 ## Speech to text
 
@@ -104,6 +134,13 @@ says 10K/day, which is stale.
 
 ## Sources
 
+Brave [pricing](https://api-dashboard.search.brave.com/documentation/pricing) ·
+[terms](https://api-dashboard.search.brave.com/documentation/resources/terms-of-service) ·
+Exa [pricing](https://exa.ai/pricing) ·
+Tavily [pricing](https://www.tavily.com/pricing) ·
+Google CSE [overview](https://developers.google.com/custom-search/v1/overview) ·
+Bing [retirement](https://learn.microsoft.com/en-us/lifecycle/announcements/bing-search-api-retirement) ·
+Wikimedia [rate limits](https://www.mediawiki.org/wiki/Wikimedia_APIs/Rate_limits) ·
 Anthropic [models](https://platform.claude.com/docs/en/about-claude/models/overview) ·
 [structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) ·
 OpenAI [pricing](https://developers.openai.com/api/docs/pricing) ·

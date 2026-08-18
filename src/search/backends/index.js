@@ -8,6 +8,7 @@
 // Wikipedia/Wikidata need no key, so the engine is useful out of the box.
 import { createWikipediaBackend } from './wikipedia.js';
 import { createBraveBackend } from './brave.js';
+import { createExaBackend } from './exa.js';
 import { createGoogleCseBackend } from './googleCse.js';
 import { createSearxngBackend } from './searxng.js';
 
@@ -15,6 +16,7 @@ export function buildBackends(config) {
   const all = [
     createWikipediaBackend(config),
     createBraveBackend(config),
+    createExaBackend(config),
     createGoogleCseBackend(config),
     createSearxngBackend(config),
   ];

@@ -62,6 +62,11 @@ export const config = {
   searchMaxPerDomain: int(env.SEARCH_MAX_PER_DOMAIN, 2),
   searchMaxPageBytes: int(env.SEARCH_MAX_PAGE_BYTES, 1200000),
   searchCacheTtlSec: int(env.SEARCH_CACHE_TTL_SEC, 60 * 60 * 6),
+  // Some vendors (Brave) permit only transient caching of their results. When
+  // such a backend contributed, this shorter TTL applies instead: long enough
+  // to serve a repeated claim inside one debate, short enough to be operational
+  // rather than a stored database of their results.
+  searchRestrictedCacheTtlSec: int(env.SEARCH_RESTRICTED_CACHE_TTL_SEC, 300),
   searchBreakerCooldownMs: int(env.SEARCH_BREAKER_COOLDOWN_MS, 60000),
   // Identify the bot honestly to the sites we read.
   searchUserAgent:

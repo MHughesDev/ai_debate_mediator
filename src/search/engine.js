@@ -44,7 +44,7 @@ export function createSearchEngine({ config, backends: injectedBackends, fetchIm
             try {
               const results = await backend.search(q, { limit: 8, signal: controller.signal, deadlineAt });
               breaker.success(backend.name);
-              return { backend: `${backend.name}:${q}`, results };
+              return { backend: `${backend.name}:${q}`, results, cacheRestricted: !!backend.cacheRestricted };
             } catch (err) {
               // A quota skip is not a failure. The backend is healthy; we
               // simply had no rate-limit budget for it before this claim's
@@ -178,7 +178,13 @@ export function createSearchEngine({ config, backends: injectedBackends, fetchIm
       results: results.length,
     });
 
-    if (useCache && results.length) await writeCache(key, results, config.searchCacheTtlSec);
+    // Vendors differ on whether we may cache their results at all. If a
+    // restricted backend contributed anything to this answer, the whole answer
+    // takes the short TTL — we cannot separate its contribution after fusion,
+    // and the conservative choice is the only defensible one.
+    const restricted = lists.some((l) => l.cacheRestricted);
+    const ttl = restricted ? Math.min(config.searchRestrictedCacheTtlSec, config.searchCacheTtlSec) : config.searchCacheTtlSec;
+    if (useCache && results.length) await writeCache(key, results, ttl);
     return results;
   }
 

@@ -13,6 +13,7 @@ import { canonicalUrl, dedupeKey, domainAuthority, extractEntities, extractNumbe
 import { createSearchEngine } from '../src/search/engine.js';
 import { createRateLimiter, QuotaSkip } from '../src/search/rateLimiter.js';
 import { createBraveBackend, _resetBraveLimiterForTests } from '../src/search/backends/brave.js';
+import { createExaBackend } from '../src/search/backends/exa.js';
 import { cacheKey, _clearMemoryCache } from '../src/search/cache.js';
 import { _resetStoreForTests } from '../src/state/store.js';
 import { createMemoryStore } from '../src/state/memoryStore.js';
@@ -579,4 +580,76 @@ test('a kept-current source is not aged out by its creation date', () => {
   // The bug being guarded against: an undated page used to outrank a correctly
   // parsed, freshly updated one.
   assert.ok(boosted > recencyFactor(null, true), 'and it beats a page with no date at all');
+});
+
+// ------------------------------------------------ Exa backend + cache terms
+
+test('exa backend keeps the publication date, which is why it is worth having', async () => {
+  const calls = [];
+  const backend = createExaBackend(
+    { ...config, exaApiKey: 'exa-key', searchUserAgent: 'test-agent' },
+    {
+      fetchImpl: async (url, opts) => {
+        calls.push({ url, headers: opts.headers, body: JSON.parse(opts.body) });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            results: [
+              { title: 'IEA', url: 'https://iea.org/ev', text: 'Sales   tripled.', publishedDate: '2024-04-23T00:00:00.000Z' },
+              { title: 'Undated', url: 'https://example.com/x', text: 'No date here.' },
+              { title: 'Nonsense date', url: 'https://example.com/y', text: 'Bad date.', publishedDate: 'not-a-date' },
+            ],
+          }),
+        };
+      },
+    },
+  );
+
+  assert.equal(backend.enabled, true);
+  const results = await backend.search('global EV sales', { limit: 5 });
+  assert.equal(calls[0].headers['x-api-key'], 'exa-key');
+  assert.equal(calls[0].body.numResults, 5);
+  assert.equal(results[0].publishedAt, '2024-04-23T00:00:00.000Z', 'the date survives');
+  assert.equal(results[0].snippet, 'Sales tripled.', 'whitespace collapsed');
+  assert.equal(results[1].publishedAt, null, 'missing date stays null');
+  assert.equal(results[2].publishedAt, null, 'an unparseable date is dropped, not passed on');
+});
+
+test('results from a vendor that forbids caching get a short TTL', async (t) => {
+  _clearMemoryCache();
+  const base = createMemoryStore();
+  const ttls = [];
+  const spy = {
+    ...base,
+    set: (k, v, ttlSec) => {
+      ttls.push(ttlSec);
+      return base.set(k, v, ttlSec);
+    },
+  };
+  _resetStoreForTests(spy);
+  t.after(() => _resetStoreForTests(null));
+
+  const web = await startFakeWeb();
+  t.after(() => web.close());
+
+  const mk = (name, extra = {}) => ({
+    name,
+    enabled: true,
+    ...extra,
+    search: async () => [{ title: 'NASA', url: `${web.base}/nasa`, snippet: 'Great Wall not visible from the Moon.' }],
+  });
+  const cfg = { ...config, searchCacheTtlSec: 21600, searchRestrictedCacheTtlSec: 300 };
+
+  // Brave's terms permit only transient storage, so a set it contributed to
+  // must not be held for hours.
+  const restricted = createSearchEngine({ config: cfg, backends: [mk('brave', { cacheRestricted: true })] });
+  await restricted.search('Great Wall visible from the Moon', { maxResults: 3 });
+  assert.equal(ttls.at(-1), 300, 'restricted vendor caps the whole answer');
+
+  _clearMemoryCache();
+  // Wikipedia has no such restriction, so the normal TTL applies.
+  const open = createSearchEngine({ config: cfg, backends: [mk('wikipedia')] });
+  await open.search('Great Wall seen from orbit myth', { maxResults: 3 });
+  assert.equal(ttls.at(-1), 21600, 'unrestricted vendors keep the long TTL');
 });

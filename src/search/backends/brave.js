@@ -33,6 +33,11 @@ export function createBraveBackend(config, { fetchImpl = fetch, limiter } = {}) 
   return {
     name: 'brave',
     enabled: !!config.braveApiKey,
+    // Brave's terms permit only "transient storage required for operation" of
+    // the application — storing or caching results otherwise needs a plan that
+    // explicitly grants storage rights. So results this backend contributes to
+    // are cached for minutes, not hours (see engine.js).
+    cacheRestricted: true,
     // Quota-capped: only the highest-value query goes here.
     maxQueries: Math.max(1, config.braveMaxQueries || 1),
     limiter: rateLimiter,
