@@ -95,6 +95,10 @@ export const config = {
 
   // Point any provider at a different endpoint: a self-hosted server, a
   // gateway, an Azure deployment, a proxy.
+  // Cap on a single LLM request. Without one we inherit Node's 300s default,
+  // which is long enough for a local model swap to hold a socket for five
+  // minutes — measured, not hypothetical.
+  llmRequestTimeoutMs: int(env.LLM_REQUEST_TIMEOUT_MS, 120000),
   llmBaseUrl: env.LLM_BASE_URL || '',
   // Works for every provider, so an unusual setup does not need us to know its
   // vendor-specific variable name.

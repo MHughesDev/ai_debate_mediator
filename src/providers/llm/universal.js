@@ -68,10 +68,13 @@ export function createUniversalLlm({
   if (!makeDialect) throw new Error(`no dialect implementation for "${spec.dialect}"`);
   const dialect = makeDialect({ spec, apiKey, baseUrl, fetchImpl });
 
-  async function run({ task, sessionId, model, system, prompt, schema, maxTokens, effort }) {
+  async function run({ task, sessionId, model, system, prompt, schema, maxTokens, effort, signal }) {
     const started = Date.now();
+    // Bound every request. A caller's own signal still wins if it fires first.
+    const timeout = AbortSignal.timeout(config.llmRequestTimeoutMs);
+    const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const { data, usage, refused } = await dialect.structured({
-      model, system, prompt, schema, maxTokens, effort,
+      model, system, prompt, schema, maxTokens, effort, signal: combined,
     });
 
     if (sessionId && usage) {
