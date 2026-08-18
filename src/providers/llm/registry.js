@@ -13,7 +13,9 @@
 //   anthropic — POST {baseUrl}/v1/messages, x-api-key auth.
 //   gemini    — POST {baseUrl}/models/{model}:generateContent.
 //
-// MODEL IDS DRIFT. Vendors rename and retire models constantly, so the defaults
+// MODEL IDS DRIFT — these were re-verified against vendor docs on 2026-08-17,
+// and 8 of the 14 ids written six months earlier had already been retired.
+// Vendors rename and retire models constantly, so the defaults
 // below are a starting point, not a promise. LLM_MODEL overrides everything at
 // once (the usual case when self-hosting), EXTRACTOR_MODEL / JUDGE_MODEL /
 // SCORER_MODEL / RECEIPTS_MODEL override per task, and `npm run preflight`
@@ -37,7 +39,7 @@ export const PROVIDERS = {
     dialect: 'openai',
     baseUrl: 'https://api.openai.com/v1',
     apiKeyEnv: 'OPENAI_API_KEY',
-    models: { fast: 'gpt-4.1-mini', strong: 'gpt-4.1' },
+    models: { fast: 'gpt-5.6-luna', strong: 'gpt-5.6-terra' },
     docs: 'https://platform.openai.com',
   },
   google: {
@@ -45,7 +47,7 @@ export const PROVIDERS = {
     dialect: 'gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     apiKeyEnv: 'GEMINI_API_KEY',
-    models: { fast: 'gemini-2.0-flash', strong: 'gemini-1.5-pro' },
+    models: { fast: 'gemini-2.5-flash', strong: 'gemini-2.5-pro' },
     docs: 'https://aistudio.google.com',
   },
   azure: {
@@ -66,7 +68,7 @@ export const PROVIDERS = {
     dialect: 'openai',
     baseUrl: 'https://api.groq.com/openai/v1',
     apiKeyEnv: 'GROQ_API_KEY',
-    models: { fast: 'llama-3.3-70b-versatile', strong: 'llama-3.3-70b-versatile' },
+    models: { fast: 'openai/gpt-oss-20b', strong: 'openai/gpt-oss-120b' },
     docs: 'https://console.groq.com',
   },
   together: {
@@ -86,8 +88,8 @@ export const PROVIDERS = {
     baseUrl: 'https://api.fireworks.ai/inference/v1',
     apiKeyEnv: 'FIREWORKS_API_KEY',
     models: {
-      fast: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
-      strong: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
+      fast: 'accounts/fireworks/models/gpt-oss-20b',
+      strong: 'accounts/fireworks/models/gpt-oss-120b',
     },
     docs: 'https://fireworks.ai',
   },
@@ -106,7 +108,9 @@ export const PROVIDERS = {
     dialect: 'openai',
     baseUrl: 'https://api.deepseek.com/v1',
     apiKeyEnv: 'DEEPSEEK_API_KEY',
-    models: { fast: 'deepseek-chat', strong: 'deepseek-chat' },
+    // DeepSeek offers json_object only — no schema constraint. The openai
+    // dialect's negotiation handles that by stepping down a rung.
+    models: { fast: 'deepseek-v4-flash', strong: 'deepseek-v4-pro' },
     docs: 'https://platform.deepseek.com',
   },
   mistral: {
@@ -114,7 +118,7 @@ export const PROVIDERS = {
     dialect: 'openai',
     baseUrl: 'https://api.mistral.ai/v1',
     apiKeyEnv: 'MISTRAL_API_KEY',
-    models: { fast: 'mistral-small-latest', strong: 'mistral-large-latest' },
+    models: { fast: 'mistral-small-4', strong: 'mistral-large-3' },
     docs: 'https://console.mistral.ai',
   },
   xai: {
@@ -122,7 +126,7 @@ export const PROVIDERS = {
     dialect: 'openai',
     baseUrl: 'https://api.x.ai/v1',
     apiKeyEnv: 'XAI_API_KEY',
-    models: { fast: 'grok-2-latest', strong: 'grok-2-latest' },
+    models: { fast: 'grok-build-0.1', strong: 'grok-4.6' },
     docs: 'https://console.x.ai',
   },
   cerebras: {
@@ -130,7 +134,7 @@ export const PROVIDERS = {
     dialect: 'openai',
     baseUrl: 'https://api.cerebras.ai/v1',
     apiKeyEnv: 'CEREBRAS_API_KEY',
-    models: { fast: 'llama-3.3-70b', strong: 'llama-3.3-70b' },
+    models: { fast: 'gpt-oss-120b', strong: 'gpt-oss-120b' },
     docs: 'https://cloud.cerebras.ai',
   },
 

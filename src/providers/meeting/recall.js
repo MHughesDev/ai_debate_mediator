@@ -118,6 +118,14 @@ export function createRecallProvider() {
         body: JSON.stringify({
           meeting_url: session.meetingUrl,
           bot_name: 'AI Debate Mediator',
+          // Per-participant audio is compute heavy and Recall requires 4-core
+          // bots for it. Without this the separate streams we depend on for
+          // speaker attribution are not reliably delivered.
+          variant: {
+            zoom: 'web_4_core',
+            google_meet: 'web_4_core',
+            microsoft_teams: 'web_4_core',
+          },
           output_media: {
             camera: { kind: 'webpage', config: { url: displayUrl } },
           },

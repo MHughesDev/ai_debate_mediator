@@ -58,7 +58,7 @@ Adding env vars switches the same code paths from mocks to real vendors (selecti
 | `RECALL_API_KEY` (+ `PUBLIC_BASE_URL`) | Real meeting bot via Recall.ai (ADR-0001) |
 | `ASSEMBLYAI_API_KEY` | Streaming STT (ADR-0004; `DEEPGRAM_API_KEY` stays swappable) |
 | any one LLM key *or* a local model | Claim extraction, judging, scoring, receipts — see below |
-| `BRAVE_API_KEY` | Full web coverage for search — free tier, recommended (see below) |
+| `BRAVE_API_KEY` | Full web coverage for search — paid, ~$5/mo credit (see below) |
 | `DATABASE_URL` | Neon Postgres persistence (ADR-0003) |
 | `REDIS_URL` | Upstash Redis hot state / queues / pub-sub (ADR-0003) |
 
@@ -80,7 +80,9 @@ LLM_PROVIDER=ollama LLM_MODEL=llama3.3 npm start
 
 Under the hood there are only three request dialects, because nearly every vendor speaks OpenAI's. Prompts and schemas are shared, so a prompt improvement applies to every backend at once. Structured output is **negotiated rather than assumed** — `json_schema`, then `json_object`, then plain prompting with JSON recovered from the reply — because a self-hosted server is exactly where schema support is likely to be partial. Misconfiguration throws at startup naming the variable to fix, and `/healthz` reports the live provider, dialect, endpoint and resolved models.
 
-> **Subscriptions do not work for this.** ChatGPT Plus and Claude Pro/Max are separate products from the APIs and expose no endpoint an app can call. Use pay-as-you-go API billing, a free tier (Groq, Gemini), or self-host.
+> **Subscriptions do not work for this.** ChatGPT Plus and Claude Pro/Max are separate products from the APIs and expose no endpoint an app can call.
+>
+> And **no hosted free tier reliably sustains a live debate**: extraction runs ~12 requests/minute, which is above Cerebras (5 RPM) and Fireworks (10 RPM), while Groq's 1,000/day and OpenRouter's 50/day are spent by a single debate. Either budget a few dollars per debate or self-host, where there is no rate limit at all. Verified tier-by-tier in [docs/VENDOR-TIERS.md](docs/VENDOR-TIERS.md).
 
 ## Search: our own retrieval layer
 
@@ -92,9 +94,9 @@ claim → query planning → federated backends → reciprocal rank fusion
       → BM25 passage ranking with claim-aware boosts → top passages
 ```
 
-It runs with **no API keys** (Wikipedia/Wikidata), but Wikipedia alone is imprecise on statistical claims. The chosen general-web backend is [Brave Search](https://brave.com/search/api/) on its free tier: an independent index (not a Google/Bing reseller, so it federates as a genuinely different retriever) that returns publication dates for recency scoring. A self-hosted [SearXNG](https://docs.searxng.org/) is supported for deployments that prefer no third-party key.
+It runs with **no API keys** (Wikipedia/Wikidata), but Wikipedia alone is imprecise on statistical claims. The chosen general-web backend is [Brave Search](https://brave.com/search/api/): an independent index (not a Google/Bing reseller, so it federates as a genuinely different retriever) that returns publication dates for recency scoring. **It is not free** — there is no free plan, and a subscription is required before a key can be issued. The Search plan bills $5.00 per 1,000 requests against $5 of monthly credit, so roughly 1,000 requests a month are covered; at one query per claim that is about 25 hour-long debates. A self-hosted [SearXNG](https://docs.searxng.org/) is supported for deployments that prefer no third-party key.
 
-Brave's free tier allows ~1 query/second, so it is metered rather than left to collect 429s: slots are reserved synchronously across sessions, a claim skips the backend instead of blowing its verdict deadline waiting for one, and a quota skip is deliberately *not* counted as a backend failure — otherwise running low on quota would trip the circuit breaker and take a healthy backend offline. Ranking favors primary sources, weighs recency only for time-sensitive claims, drops passages that mention none of the claim's entities or numbers, and always issues a contradiction-seeking query so we hunt counter-evidence rather than confirmation.
+Brave allows 50 requests/second, so rate is not the constraint — spend is. It is metered so a debate stays inside the monthly credit rather than running up a bill: slots are reserved synchronously across sessions, a claim skips the backend instead of blowing its verdict deadline waiting for one, and a quota skip is deliberately *not* counted as a backend failure — otherwise running low on budget would trip the circuit breaker and take a healthy backend offline. Ranking favors primary sources, weighs recency only for time-sensitive claims, drops passages that mention none of the claim's entities or numbers, and always issues a contradiction-seeking query so we hunt counter-evidence rather than confirmation.
 
 Measure quality and latency yourself, on any claim:
 

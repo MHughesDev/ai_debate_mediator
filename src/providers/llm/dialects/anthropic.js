@@ -55,6 +55,17 @@ export function createAnthropicDialect({ apiKey, baseUrl, fetchImpl = fetch }) {
 
   return {
     name: 'anthropic',
+
+    async listModels({ signal } = {}) {
+      const res = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/v1/models`, {
+        headers: { 'x-api-key': apiKey, 'anthropic-version': API_VERSION },
+        signal,
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return (data.data || []).map((m) => m.id).filter(Boolean);
+    },
+
     async structured({ model, system, prompt, schema, maxTokens = 2000, effort, signal }) {
       try {
         return await attempt({ model, system, prompt, schema, maxTokens, effort, useSchema: supportsJsonSchema, signal });

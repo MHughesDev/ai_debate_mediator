@@ -85,6 +85,16 @@ export function createOpenAiDialect({ spec, apiKey, baseUrl, fetchImpl = fetch }
 
   return {
     name: 'openai',
+
+    // Model ids drift, and on a self-hosted server the valid id is whatever
+    // happens to be loaded. Asking the endpoint beats trusting a default.
+    async listModels({ signal } = {}) {
+      const res = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/models`, { headers: headers(), signal });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return (data.data || []).map((m) => m.id).filter(Boolean);
+    },
+
     async structured({ model, system, prompt, schema, maxTokens = 2000, signal }) {
       const cacheKey = `${baseUrl}|${model}`;
       const start = MODES.indexOf(modeCache.get(cacheKey) || MODES[0]);

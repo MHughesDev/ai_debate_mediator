@@ -55,6 +55,26 @@ async function main() {
     return `${info.label} [${info.dialect}] ${info.models.extractor} -> ${shape}`;
   });
 
+  // Model ids drift as vendors rename and retire them, and on a self-hosted
+  // server the only valid id is whatever happens to be loaded. Ask the endpoint
+  // rather than trusting a default.
+  await check('LLM: models', config.llmProvider !== 'mock' ? config.llmProvider : '', async () => {
+    const { getLlmProvider } = await import('../src/providers/llm/index.js');
+    const llm = getLlmProvider();
+    const info = llm.describe();
+    const available = await llm.listModels().catch(() => null);
+    if (!available || !available.length) return 'endpoint does not list models — ids unverified';
+    const wanted = [...new Set(Object.values(info.models))];
+    const missing = wanted.filter((m) => !available.includes(m));
+    if (missing.length) {
+      const sample = available.slice(0, 6).join(', ');
+      throw new Error(
+        `not served: ${missing.join(', ')} — available include: ${sample}${available.length > 6 ? ', ...' : ''}`,
+      );
+    }
+    return `${wanted.join(', ')} confirmed against ${available.length} served`;
+  });
+
   await check('Tavily search', config.tavilyApiKey, async () => {
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',

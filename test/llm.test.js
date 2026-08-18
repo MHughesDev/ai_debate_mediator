@@ -31,6 +31,11 @@ async function startFakeLlm(opts = {}) {
         res.end(JSON.stringify(obj));
       };
 
+      if (req.url.includes('/models') && req.method === 'GET') {
+        if (opts.status) return send(opts.status, { error: { message: 'not implemented' } });
+        return send(200, { data: (opts.served || ['gpt-5.6-terra', 'gpt-5.6-luna']).map((id) => ({ id })) });
+      }
+
       if (req.url.includes('/chat/completions')) {
         const kind = parsed.response_format?.type || 'none';
         if (reject.has(kind)) return send(400, { error: { message: `${kind} not supported` } });
@@ -47,6 +52,15 @@ async function startFakeLlm(opts = {}) {
         return send(200, {
           content: [{ type: 'text', text: opts.content ?? JSON.stringify(VERDICT) }],
           usage: { input_tokens: 12, output_tokens: 5 },
+        });
+      }
+
+      if (req.url.includes('/interactions')) {
+        if (opts.noInteractions) return send(404, { error: { message: 'not found' } });
+        return send(200, {
+          id: 'int_1', status: 'completed', model: 'gemini-2.5-pro',
+          steps: [{ content: { parts: [{ text: opts.content ?? JSON.stringify(VERDICT) }] } }],
+          usage: { total_input_tokens: 9, total_output_tokens: 4 },
         });
       }
 
@@ -87,8 +101,8 @@ test('provider selection: explicit wins, otherwise the key present decides', () 
 
 test('model resolution: per-task env beats the provider default', () => {
   const openai = getProviderSpec('openai');
-  assert.equal(resolveModel(openai, 'extractor', {}), 'gpt-4.1-mini', 'fast model for the extraction loop');
-  assert.equal(resolveModel(openai, 'judge', {}), 'gpt-4.1', 'strong model for what reaches the screen');
+  assert.equal(resolveModel(openai, 'extractor', {}), 'gpt-5.6-luna', 'fast model for the extraction loop');
+  assert.equal(resolveModel(openai, 'judge', {}), 'gpt-5.6-terra', 'strong model for what reaches the screen');
   assert.equal(resolveModel(openai, 'judge', { JUDGE_MODEL: 'o3' }), 'o3');
   // Self-hosted providers have no defaults — we cannot know what is loaded.
   assert.equal(resolveModel(getProviderSpec('ollama'), 'judge', {}), '');
@@ -141,7 +155,7 @@ test('openai dialect: real request shape, parsed result, usage counted', async (
 
   const req = fake.requests.at(-1);
   assert.equal(req.headers.authorization, 'Bearer sk-test');
-  assert.equal(req.body.model, 'gpt-4.1', 'judging uses the strong model');
+  assert.equal(req.body.model, 'gpt-5.6-terra', 'judging uses the strong model');
   assert.equal(req.body.response_format.type, 'json_schema', 'schema enforcement preferred');
   assert.match(req.body.messages[1].content, /EV sales tripled/);
   assert.match(req.body.messages[1].content, /Motion/, 'the motion reaches the judge here too');
@@ -201,12 +215,33 @@ test('gemini dialect posts generateContent with a schema it accepts', async (t) 
   const verdict = await llm.judgeClaim({ claim: CLAIM, results: [] });
   assert.deepEqual(verdict, VERDICT);
   const req = fake.requests.at(-1);
-  assert.match(req.url, /models\/gemini-1\.5-pro:generateContent\?key=g-key/);
-  assert.equal(req.body.generationConfig.responseMimeType, 'application/json');
+  assert.match(req.url, /\/interactions$/, 'uses the current Interactions API');
+  assert.equal(req.headers['x-goog-api-key'], 'g-key', 'key travels in a header, not the URL');
+  assert.equal(req.body.model, 'gemini-2.5-pro');
+  assert.equal(req.body.response_format.mime_type, 'application/json');
+});
+
+test('gemini falls back to generateContent when Interactions is unavailable', async (t) => {
+  // Google runs two API generations at once; an account or endpoint that only
+  // knows the older one must still work rather than silently yielding nothing.
+  const fake = await startFakeLlm({ noInteractions: true });
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'google',
+    env: { GEMINI_API_KEY: 'g-key' },
+    baseUrl: fake.base,
+  });
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results: [] });
+  assert.deepEqual(verdict, VERDICT, 'still produced a verdict via the older endpoint');
+
+  const urls = fake.requests.map((r) => r.url);
+  assert.match(urls[0], /\/interactions$/, 'tried the current API first');
+  assert.match(urls[1], /:generateContent$/, 'then fell back');
+  const body = fake.requests.at(-1).body;
   assert.equal(
-    JSON.stringify(req.body.generationConfig.responseSchema).includes('additionalProperties'),
+    JSON.stringify(body.generationConfig.responseSchema).includes('additionalProperties'),
     false,
-    'Gemini rejects additionalProperties, so it is stripped rather than sent',
+    'the older endpoint rejects additionalProperties, so it is stripped',
   );
 });
 
@@ -328,4 +363,31 @@ test('JSON is recovered from whatever a small model wraps it in', () => {
   assert.equal(extractJson('no json at all'), null);
   assert.equal(extractJson(''), null);
   assert.equal(extractJson(null), null);
+});
+
+test('the endpoint is asked which models it serves, so a stale default is caught', async (t) => {
+  const fake = await startFakeLlm({ served: ['llama3.3:70b', 'qwen2.5'] });
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'ollama',
+    env: { LLM_MODEL: 'llama3.3:70b' },
+    baseUrl: `${fake.base}/v1`,
+  });
+  const served = await llm.listModels();
+  assert.deepEqual(served, ['llama3.3:70b', 'qwen2.5']);
+  // This is what preflight compares against: a model id nobody serves is a
+  // broken config, and the wrong time to discover it is mid-debate.
+  assert.equal(served.includes('llama3.3:70b'), true);
+  assert.equal(served.includes('claude-opus-5'), false);
+});
+
+test('a provider that cannot list models says so rather than failing', async (t) => {
+  const fake = await startFakeLlm({ status: 404 });
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'custom',
+    env: { LLM_MODEL: 'whatever' },
+    baseUrl: `${fake.base}/v1`,
+  });
+  assert.equal(await llm.listModels(), null, 'null means unknown, not broken');
 });

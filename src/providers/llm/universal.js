@@ -84,6 +84,9 @@ export function createUniversalLlm({
   const provider = createTasks(run, (task) => models[task], spec.id);
   return {
     ...provider,
+    // Ask the endpoint which models it actually serves. Returns null when the
+    // provider does not implement listing, which is not an error.
+    listModels: (opts) => (dialect.listModels ? dialect.listModels(opts) : Promise.resolve(null)),
     // Surfaced by /healthz and preflight so it is obvious what is actually
     // running — the single most common source of confusion when a debate
     // behaves unlike the last one.
