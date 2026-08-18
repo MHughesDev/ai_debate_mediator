@@ -469,3 +469,58 @@ test('routing is opt-in: one provider stays one provider', async (t) => {
   assert.equal(llm.describe().routed, false);
   assert.equal(llm.kind, 'custom');
 });
+
+test('the judge cites result numbers, and we resolve them to real sources', async (t) => {
+  // Small models reliably emit "[1, 3]" and unreliably reproduce a long URL.
+  // Measured: qwen2.5:7b returned a correct FALSE at 0.95 confidence with an
+  // empty sources array, which gateVerdict then downgraded to UNVERIFIED —
+  // a right answer thrown away over formatting.
+  const fake = await startFakeLlm({
+    content: JSON.stringify({
+      verdict: 'FALSE',
+      confidence: 0.95,
+      evidence_summary: 'The sources contradict the claim.',
+      source_indices: [3, 1, 9, 3],
+    }),
+  });
+  t.after(() => fake.close());
+
+  const llm = createUniversalLlm({
+    providerId: 'openai',
+    env: { OPENAI_API_KEY: 'sk-test' },
+    baseUrl: `${fake.base}/v1`,
+  });
+  const results = [
+    { title: 'Wikipedia', url: 'https://en.wikipedia.org/a', snippet: 'x' },
+    { title: 'Blog', url: 'https://blog.example/b', snippet: 'y' },
+    { title: 'Nature', url: 'https://nature.com/c', snippet: 'z' },
+  ];
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results, motion: 'M' });
+
+  assert.equal(verdict.verdict, 'FALSE');
+  assert.deepEqual(
+    verdict.sources,
+    [
+      { name: 'Nature', url: 'https://nature.com/c' },
+      { name: 'Wikipedia', url: 'https://en.wikipedia.org/a' },
+    ],
+    'cited in the order given, 1-based, with the out-of-range 9 dropped and the repeat ignored',
+  );
+  // The prompt must actually number the results, or the indices mean nothing.
+  assert.match(fake.requests.at(-1).body.messages[1].content, /\[1\] Wikipedia/);
+  assert.match(fake.requests.at(-1).body.messages[1].content, /\[3\] Nature/);
+});
+
+test('a verdict citing nothing resolvable carries no sources, and the gate can catch it', async (t) => {
+  const fake = await startFakeLlm({
+    content: JSON.stringify({ verdict: 'FALSE', confidence: 0.99, evidence_summary: 'Trust me.', source_indices: [7] }),
+  });
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'openai',
+    env: { OPENAI_API_KEY: 'sk-test' },
+    baseUrl: `${fake.base}/v1`,
+  });
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results: [{ title: 'A', url: 'https://a.test/1', snippet: 's' }] });
+  assert.deepEqual(verdict.sources, [], 'an unresolvable citation is dropped rather than guessed at');
+});

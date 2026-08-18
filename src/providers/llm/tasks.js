@@ -57,23 +57,26 @@ export const EXTRACT_SCHEMA = {
   additionalProperties: false,
 };
 
+// Sources are cited by RESULT NUMBER, not by URL. Reproducing a long URL
+// verbatim in JSON is exactly what a small model gets wrong, and getting it
+// wrong is expensive: no sources means gateVerdict downgrades an otherwise
+// correct verdict to UNVERIFIED. Measured on qwen2.5:7b, which returned a
+// correct FALSE at 0.95 confidence with an empty sources array. Citing "[1],
+// [3]" is trivial by comparison, and the mapping back to URLs is ours — so a
+// source can never be invented.
 export const JUDGE_SCHEMA = {
   type: 'object',
   properties: {
     verdict: { type: 'string', enum: ['TRUE', 'FALSE', 'MISLEADING', 'UNVERIFIABLE'] },
     confidence: { type: 'number' },
     evidence_summary: { type: 'string' },
-    sources: {
+    source_indices: {
       type: 'array',
-      items: {
-        type: 'object',
-        properties: { name: { type: 'string' }, url: { type: 'string' } },
-        required: ['name', 'url'],
-        additionalProperties: false,
-      },
+      items: { type: 'integer' },
+      description: 'Numbers of the search results that informed the verdict, e.g. [1, 3]',
     },
   },
-  required: ['verdict', 'confidence', 'evidence_summary', 'sources'],
+  required: ['verdict', 'confidence', 'evidence_summary', 'source_indices'],
   additionalProperties: false,
 };
 
@@ -102,7 +105,8 @@ const JUDGE_SYSTEM =
   'Verdicts: TRUE (results clearly support it), FALSE (results clearly contradict it), MISLEADING (technically partial truth that creates a wrong impression), ' +
   'UNVERIFIABLE (results cannot settle it). confidence is 0-1 and must reflect the strength of the evidence; a FALSE verdict shown on screen is the worst possible ' +
   'failure mode, so only assign FALSE with high confidence and contradicting sources. evidence_summary is ONE display-ready sentence. ' +
-  'sources must reference only URLs from the results that actually informed the verdict. ' +
+  'source_indices lists the NUMBERS of the results that actually informed the verdict, for example [1, 3]. ' +
+  'Whenever the results settle the claim you must cite at least one; an uncited verdict cannot be shown and is wasted work. ' +
   'SCOPE: evidence about a different country, organisation, population or time period than the claim is NOT evidence for it. ' +
   'Search is keyword-based, so results often describe a similar-sounding but different subject - a claim about unemployment ' +
   'answered by statistics for a different country, for instance. Use the debate motion to resolve what an underspecified claim refers to. ' +
@@ -155,7 +159,15 @@ export function createTasks(run, modelFor, kind) {
           `Claim by ${claim.speaker}: "${claim.text}"\n\nSearch results:\n${resultsText || '(no results found)'}`,
         schema: JUDGE_SCHEMA,
       });
-      return result || { verdict: 'UNVERIFIABLE', confidence: 0, evidence_summary: 'Verification unavailable.', sources: [] };
+      if (!result) {
+        return { verdict: 'UNVERIFIABLE', confidence: 0, evidence_summary: 'Verification unavailable.', sources: [] };
+      }
+      return {
+        verdict: result.verdict,
+        confidence: result.confidence,
+        evidence_summary: result.evidence_summary,
+        sources: resolveSources(result.source_indices, results),
+      };
     },
 
     async generateReceipts({ sessionId, motion, stats }) {
@@ -172,4 +184,21 @@ export function createTasks(run, modelFor, kind) {
       return result || { headline: 'Debate complete.' };
     },
   };
+}
+
+// Map cited result numbers back to real sources. Anything out of range is
+// dropped rather than guessed at: a citation we cannot resolve is not a
+// citation, and inventing one would defeat the point of citing.
+function resolveSources(indices, results) {
+  const list = results || [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of indices || []) {
+    const i = Number(raw) - 1; // results are presented to the model 1-based
+    const hit = list[i];
+    if (!hit?.url || seen.has(hit.url)) continue;
+    seen.add(hit.url);
+    out.push({ name: hit.title || hit.domain || hit.url, url: hit.url });
+  }
+  return out;
 }
