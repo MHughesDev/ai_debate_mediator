@@ -36,6 +36,8 @@ export async function buildReceiptStats(sessionId, { dodgeStats } = {}) {
     factual_claims: factual.length,
     verdict_counts: verdictCounts,
     biggest_unsupported_claim: unsupported?.text || null,
+    // Attribution travels with the quote so the card never has to infer it.
+    biggest_unsupported_claim_speaker: unsupported?.speaker || null,
     unanswered_questions: dodgeStats ? dodgeStats.dodged + dodgeStats.unansweredAtEnd : questions.length ? undefined : 0,
     questions_asked: questions.length,
   };
@@ -56,7 +58,12 @@ export async function generateAndPublishReceipts(sessionId, { llm, dodgeStats })
       ...narrative,
       final_scores: stats.speakers.map((s) => ({ speaker: s.speaker, team: s.team, total: s.total, subs: s.subs })),
       verdict_counts: stats.verdict_counts,
-      biggest_unsupported_claim: narrative.biggest_unsupported_claim ?? stats.biggest_unsupported_claim,
+      // Verbatim from the transcript, never the model's retelling. Measured
+      // failure: asked to restate this, a 7B appended "(Proposition's claim,
+      // unverified by Opposition.)" to a claim whose speaker had no team set —
+      // a fabricated attribution on a card shown to the people it describes.
+      biggest_unsupported_claim: stats.biggest_unsupported_claim,
+      biggest_unsupported_claim_speaker: stats.biggest_unsupported_claim_speaker,
       unanswered_questions: stats.unanswered_questions ?? 0,
       cost_estimate_usd: costs?.estimate ?? null,
       generatedAt: Date.now(),

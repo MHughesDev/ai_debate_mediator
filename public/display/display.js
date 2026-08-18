@@ -100,7 +100,10 @@ function renderReceipts(e) {
   if (winner) lines.push(winner);
   if (e.most_accurate) lines.push(`🎯 Most accurate: <strong>${e.most_accurate}</strong>`);
   if (e.least_accurate) lines.push(`⚠️ Least accurate: <strong>${e.least_accurate}</strong>`);
-  if (e.biggest_unsupported_claim) lines.push(`❓ Biggest unsupported claim: “${e.biggest_unsupported_claim}”`);
+  if (e.biggest_unsupported_claim) {
+    const who = e.biggest_unsupported_claim_speaker ? ` — ${e.biggest_unsupported_claim_speaker}` : '';
+    lines.push(`❓ Biggest unsupported claim: “${e.biggest_unsupported_claim}”${who}`);
+  }
   if (typeof e.unanswered_questions === 'number') lines.push(`🙊 Unanswered questions: ${e.unanswered_questions}`);
   for (const html of lines) {
     const div = document.createElement('div');

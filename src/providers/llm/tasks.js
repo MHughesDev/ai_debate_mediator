@@ -87,7 +87,6 @@ export const RECEIPTS_SCHEMA = {
     headline: { type: 'string' },
     most_accurate: { type: 'string' },
     least_accurate: { type: 'string' },
-    biggest_unsupported_claim: { type: 'string' },
   },
   required: ['headline'],
   additionalProperties: false,
@@ -114,7 +113,9 @@ const JUDGE_SYSTEM =
   'in one sentence. Never stretch evidence to fit.';
 
 const RECEIPTS_SYSTEM =
-  'You write the post-debate "receipts" card. Base every statement strictly on the provided stats; short, punchy, neutral. headline is one sentence.';
+  'You write the post-debate "receipts" card. Base every statement strictly on the provided stats; short, punchy, neutral. headline is one sentence. ' +
+  'Name a speaker or team only where the stats state it. Never add explanatory parentheticals, and never attribute a claim to someone the stats do not name — ' +
+  'this card is shown to the people it describes, so a wrong attribution is as damaging as a wrong verdict.';
 
 /**
  * Build the LlmProvider task surface on top of a `run` function.

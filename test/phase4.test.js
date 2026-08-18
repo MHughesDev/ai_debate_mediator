@@ -232,3 +232,52 @@ test('phase4: the judge is told the motion, so underspecified claims have contex
   assert.equal(seen.motion, 'This house believes the United States economy has recovered');
   assert.equal(seen.claim.text, 'Unemployment is at a record low.');
 });
+
+test('phase4: the receipts quotation is verbatim and its attribution comes from data', async (t) => {
+  const srv = await setupTestServer();
+  t.after(() => srv.close());
+  const session = await createTestSession(srv.baseUrl, {
+    motion: 'This house believes electric vehicles have gone mainstream',
+    config: { preset: 'oxford' },
+    speakers: [{ name: 'Alex Rivera', team: 'P' }, { name: 'Jordan Blake', team: 'O' }],
+  });
+
+  // Receipts need scored speakers, which the pipeline normally registers as
+  // participants join.
+  const { ensureSpeaker } = await import('../src/pipeline/speakers.js');
+  await ensureSpeaker(session.id, { participantId: 'p1', name: 'Alex Rivera' });
+  await ensureSpeaker(session.id, { participantId: 'p2', name: 'Jordan Blake' });
+
+  const { addClaim, setClaimVerdict } = await import('../src/pipeline/argumentGraph.js');
+  const VERBATIM = 'Electric vehicles actually emit more carbon dioxide than gasoline cars over their lifetime.';
+  const claim = await addClaim(session.id, {
+    text: VERBATIM,
+    speaker: 'Jordan Blake',
+    type: 'factual',
+    checkable: true,
+  });
+  await setClaimVerdict(session.id, claim.id, {
+    verdict: 'FALSE',
+    confidence: 0.95,
+    evidence_summary: 'Sources contradict it.',
+    sources: [{ name: 'ICCT', url: 'https://theicct.org/x' }],
+  });
+
+  const { generateAndPublishReceipts } = await import('../src/pipeline/receipts.js');
+  // A model that rewrites the quote and invents an attribution — which is what
+  // a local 7B actually did, appending "(Proposition's claim...)" to a claim
+  // whose speaker it had no team data for.
+  const receipts = await generateAndPublishReceipts(session.id, {
+    llm: {
+      async generateReceipts() {
+        return {
+          headline: 'Proposition takes it.',
+          biggest_unsupported_claim: 'EVs are dirtier than petrol cars (Proposition said this).',
+        };
+      },
+    },
+  });
+
+  assert.equal(receipts.biggest_unsupported_claim, VERBATIM, 'the transcript wins over the retelling');
+  assert.equal(receipts.biggest_unsupported_claim_speaker, 'Jordan Blake', 'attributed to whoever actually said it');
+});
