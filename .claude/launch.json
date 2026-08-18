@@ -5,6 +5,7 @@
       "name": "server",
       "runtimeExecutable": "node",
       "runtimeArgs": [
+        "--env-file-if-exists=.env",
         "src/index.js"
       ],
       "port": 8080,
