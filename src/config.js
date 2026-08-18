@@ -21,7 +21,10 @@ export const config = {
   sttProvider: env.STT_PROVIDER || (env.DEEPGRAM_API_KEY ? 'deepgram' : env.ASSEMBLYAI_API_KEY ? 'assemblyai' : 'mock'),
   // Our own search layer (ADR-0006) is the default: it needs no API key
   // (Wikipedia/Wikidata) and improves as backends are configured.
-  searchProvider: env.SEARCH_PROVIDER || (env.TAVILY_API_KEY ? 'tavily' : env.EXA_API_KEY ? 'exa' : 'own'),
+  // Always our own engine unless explicitly overridden. Exa and Tavily keys
+  // activate them as FEDERATED BACKENDS (ADR-0006); they must not silently
+  // replace the whole retrieval layer, which is what auto-selection did.
+  searchProvider: env.SEARCH_PROVIDER || 'own',
   // One global switch across every LLM backend (ADR-0007). Explicit
   // LLM_PROVIDER wins; otherwise the first vendor whose key is present.
   llmProvider: resolveProviderId(env),

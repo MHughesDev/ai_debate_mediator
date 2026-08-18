@@ -19,6 +19,9 @@ export async function startBrain(sessionId, { llm, searchProvider, extractInterv
   const resolvedLlm = llm || getLlmProvider();
   const resolvedSearch = searchProvider || getSearchProvider();
 
+  // Start loading the model now rather than when the first claim arrives.
+  if (resolvedLlm.warmup) resolvedLlm.warmup().catch(() => {});
+
   const verifier = startVerifier(sessionId, {
     llm: resolvedLlm,
     searchProvider: resolvedSearch,

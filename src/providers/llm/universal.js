@@ -84,6 +84,27 @@ export function createUniversalLlm({
   const provider = createTasks(run, (task) => models[task], spec.id);
   return {
     ...provider,
+    // Load the model before the debate needs it. A self-hosted 7B takes ~50s to
+    // page in on first use but ~4s once warm, so without this the first minute
+    // of a debate produces no claims. Fire-and-forget: warming is an
+    // optimisation, and its failure must never block a session starting.
+    async warmup() {
+      const unique = [...new Set(Object.values(models))];
+      await Promise.all(
+        unique.map((model) =>
+          dialect
+            .structured({
+              model,
+              system: 'Reply with JSON only.',
+              prompt: 'Return {"ok":true}',
+              schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] },
+              maxTokens: 16,
+            })
+            .catch((err) => logger.debug('llm warmup failed', { model, error: err.message })),
+        ),
+      );
+    },
+
     // Ask the endpoint which models it actually serves. Returns null when the
     // provider does not implement listing, which is not an error.
     listModels: (opts) => (dialect.listModels ? dialect.listModels(opts) : Promise.resolve(null)),

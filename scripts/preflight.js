@@ -18,18 +18,38 @@ function record(name, status, detail, ms) {
   console.log(`${icon} ${name.padEnd(24)} ${status.padEnd(5)} ${detail}${timing}`);
 }
 
+// Every check is time-boxed. A vendor that hangs must report as a hang rather
+// than stalling the whole run — a self-hosted model loading a cold 7B file can
+// take a minute, and without this the first slow check hides every later one.
+const CHECK_TIMEOUT_MS = int(process.env.PREFLIGHT_TIMEOUT_MS, 60000);
+
 async function check(name, key, fn) {
   if (!key) {
     record(name, 'SKIP', 'no key set — this vendor runs as a mock');
     return;
   }
   const started = t();
+  let timer;
   try {
-    const detail = await fn();
+    const detail = await Promise.race([
+      fn(),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`no response within ${Math.round(CHECK_TIMEOUT_MS / 1000)}s`)),
+          CHECK_TIMEOUT_MS,
+        );
+      }),
+    ]);
     record(name, 'OK', detail, t() - started);
   } catch (err) {
     record(name, 'FAIL', err.message.slice(0, 160), t() - started);
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+function int(v, d) {
+  return v !== undefined && v !== '' ? parseInt(v, 10) : d;
 }
 
 async function main() {
