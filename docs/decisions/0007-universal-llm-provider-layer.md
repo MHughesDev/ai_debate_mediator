@@ -152,7 +152,7 @@ warm timings unless noted:
 
 | Model | Extraction | Judging | Verdict quality |
 |---|---|---|---|
-| `qwen2.5:7b-instruct` (4.7 GB) | 1.7 s | 4 s | **Never returns FALSE** with cited sources; the gate downgrades to UNVERIFIED |
+| `qwen2.5:7b-instruct` (4.7 GB) | 1.7 s | ~2.5 s | **Correct FALSE, 0.95, sources cited** — after the citation fix below |
 | `qwen2.5-coder:14b` (9 GB) | 12 s | 7–15 s | **Correct FALSE**, confidence 1.0, sources cited |
 | `qwen2.5-coder:32b` (19 GB) | — | — | Never loaded; exceeds VRAM and stalls on CPU |
 | 7B + 14B together | **294 s per swap** | — | Unworkable: one is evicted to load the other |
@@ -168,10 +168,35 @@ Two conclusions follow, and neither is about software quality:
    extracts in 1.7 s — roughly a third duty cycle, with headroom to spare — but
    cannot clear the FALSE bar.
 
-So on constrained hardware the working configuration is **local extraction plus
-hosted judging**: the 720 cheap calls stay free and local, the 40 expensive ones
-go where the quality is, and the two never contend for the same GPU. That is
-precisely what per-task routing buys, and it is the reason it exists.
+### Correction: the 7B was never the problem
+
+The conclusion first recorded here — that a 7B "cannot judge" and that hosted
+judging was therefore required — **was wrong**, and the way it was wrong is worth
+keeping.
+
+Given crisp contradicting evidence the 7B returned FALSE at confidence 1.0 with
+sources. Given the real retrieved evidence it also returned FALSE, at 0.95 — but
+with an **empty sources array**, so `gateVerdict` downgraded a correct answer to
+UNVERIFIED for want of a citation. The model was reaching the right verdict and
+failing to write down where it came from. Asking it to reproduce a long URL
+verbatim inside JSON was the defect; the results are already numbered, so the
+judge now cites `source_indices` and we map those back ourselves.
+
+After that change the 7B judges correctly on live retrieval, and **a fully local
+deployment works on this hardware**: extraction 1.7 s, judging ~2.5 s, no model
+swapping, no API key, nothing leaving the machine.
+
+Two of the three "the model is not good enough" conclusions in this project were
+actually output-format problems. Measure the failure before buying a bigger
+model.
+
+### What routing is still for
+
+Routing remains correct and stays, but the case for it is narrower than claimed
+above: it is what you reach for when one machine genuinely cannot host both
+workloads — a GPU too small for a strong model, or a deployment that wants the
+40 high-stakes calls on a hosted model while the 720 cheap ones stay local. It
+is no longer a requirement for this hardware.
 
 On a machine with enough VRAM for a strong model, `LLM_MODEL` alone is still the
 simplest correct answer.
