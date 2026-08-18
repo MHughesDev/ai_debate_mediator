@@ -18,7 +18,19 @@ export const config = {
 
   // Vendor providers (each has a mock)
   meetingProvider: env.MEETING_PROVIDER || (env.RECALL_API_KEY ? 'recall' : 'mock'),
-  sttProvider: env.STT_PROVIDER || (env.DEEPGRAM_API_KEY ? 'deepgram' : env.ASSEMBLYAI_API_KEY ? 'assemblyai' : 'mock'),
+  // The mock meeting provider emits {text} chunks rather than audio, so only
+  // the mock STT can consume them — they are a matched pair. Auto-selecting a
+  // real STT vendor just because a key exists silently produces zero
+  // transcript. An explicit STT_PROVIDER still wins.
+  sttProvider:
+    env.STT_PROVIDER ||
+    (!env.MEETING_PROVIDER && !env.RECALL_API_KEY
+      ? 'mock'
+      : env.DEEPGRAM_API_KEY
+        ? 'deepgram'
+        : env.ASSEMBLYAI_API_KEY
+          ? 'assemblyai'
+          : 'mock'),
   // Our own search layer (ADR-0006) is the default: it needs no API key
   // (Wikipedia/Wikidata) and improves as backends are configured.
   // Always our own engine unless explicitly overridden. Exa and Tavily keys
