@@ -118,9 +118,32 @@ Three constraints that shape our implementation:
    that attributes every claim to a person, name-level ground truth is
    materially better than diarization. Worth evaluating against our own STT.
 
-Open-source alternatives exist — **Attendee** (self-hostable, per-participant
-audio, Zoom/Meet/Teams) and **Vexa** (Apache-2.0) — trading vendor cost for
-running a headless browser fleet and absorbing every Zoom/Meet UI change.
+### Alternatives, checked against the constraint that actually binds
+
+Recall requires a business email at signup, which rules it out for a personal
+account. Verified 2026-08-18 — note that only two of these could be *positively*
+confirmed to accept a personal email; the rest simply do not state a policy.
+
+| Vendor | Personal email? | Real-time per-participant audio | Bot video out | Verdict |
+|---|---|---|---|---|
+| **Attendee** | **Yes — signup form inspected**: email+password or Google sign-in | **Yes** — `websocket_settings.per_participant_audio`, payloads carry `participant_uuid` | **Yes** — `voice_agent_settings.url` renders a webpage as the bot's camera at 1280x720 | **Recommended.** 5 hours free, then $0.50/hr |
+| **Vexa** | **Yes** — Google sign-in is the documented path | Unverified (framed around transcripts, not raw audio) | Not documented | **Zoom not shipped** ("coming soon"). Apache-2.0, $5 free credit |
+| **MeetStream** | Not stated ("no sales call, API key in 30 seconds") | **No** — docs say the stream is *mixed*, with dominant-speaker metadata only; true per-speaker audio arrives only *after* the call | Claimed, no supporting docs | Fallback only. $0.35/hr |
+| **MeetingBaaS** | Not stated | **No** — the OpenAPI spec exposes only `input`/`output`/`audio_frequency` | **No** — `bot_image` is a static image | Wrong primitive for speaker attribution |
+| **Skribby** | Unverified | Not documented | Not documented | Interesting property: *they* give you a WebSocket to connect to, so no public URL of your own. Unverified |
+| **Zoom SDK / RTMS direct** | n/a | Yes (separate tracks) | n/a | Needs Developer Pack credits or a paid host plan. Not viable free |
+
+Two caveats on Attendee, both easy to miss:
+1. **You supply your own Zoom app** (client ID and secret), even on the hosted
+   tier. Google Meet and Teams have no equivalent gate, so Meet is the cheapest
+   first target. This is a Zoom-side constraint you inherit from any vendor.
+2. **The license is Elastic License 2.0, not MIT** — several third-party
+   comparison sites state MIT and are wrong. ELv2 is fine for a product that
+   embeds it; it forbids offering the software itself as a hosted service.
+
+Useful asymmetry: Attendee's webpage-as-camera path needs **no public URL of
+ours**, because Attendee hosts the page. Only the per-participant *audio ingest*
+needs a reachable `wss://`.
 
 ## Data stores
 
