@@ -9,6 +9,7 @@ import http from 'node:http';
 import { resolveProviderId, resolveModel, getProviderSpec, PROVIDERS } from '../src/providers/llm/registry.js';
 import { createUniversalLlm } from '../src/providers/llm/universal.js';
 import { getLlmProvider } from '../src/providers/llm/index.js';
+import { config } from '../src/config.js';
 import { extractJson } from '../src/providers/llm/dialects/json.js';
 import { toGeminiSchema } from '../src/providers/llm/dialects/gemini.js';
 
@@ -523,4 +524,26 @@ test('a verdict citing nothing resolvable carries no sources, and the gate can c
   });
   const verdict = await llm.judgeClaim({ claim: CLAIM, results: [{ title: 'A', url: 'https://a.test/1', snippet: 's' }] });
   assert.deepEqual(verdict.sources, [], 'an unresolvable citation is dropped rather than guessed at');
+});
+
+test('a model you host yourself is not billed at a hosted vendor rate', async () => {
+  const { estimateCost } = await import('../src/pipeline/costMeter.js');
+
+  // What the local run actually produced.
+  const local = {
+    'llm_in:qwen2.5:7b-instruct': 8842,
+    'llm_out:qwen2.5:7b-instruct': 1900,
+    'llm_free:qwen2.5:7b-instruct': 1,
+    search_calls: 7,
+  };
+  // Same tokens on an unknown HOSTED model, which has no free marker.
+  const hosted = {
+    'llm_in:some-new-model': 8842,
+    'llm_out:some-new-model': 1900,
+    search_calls: 7,
+  };
+
+  const searchOnly = 7 * config.costRates.searchCall;
+  assert.equal(estimateCost(local), Math.round(searchOnly * 10000) / 10000, 'local tokens cost nothing');
+  assert.ok(estimateCost(hosted) > estimateCost(local), 'an unpriced hosted model still estimates a cost');
 });

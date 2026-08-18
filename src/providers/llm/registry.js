@@ -150,6 +150,9 @@ export const PROVIDERS = {
     baseUrl: 'http://localhost:11434/v1',
     apiKeyEnv: 'OLLAMA_API_KEY', // optional; Ollama ignores auth by default
     keyOptional: true,
+    // You run it, so tokens cost nothing — the cost meter must not price
+    // these at a hosted vendor's rate.
+    selfHosted: true,
     models: {},
     modelHint: 'run `ollama list` and set LLM_MODEL to one of them',
     docs: 'https://ollama.com',
@@ -160,6 +163,9 @@ export const PROVIDERS = {
     baseUrl: 'http://localhost:8000/v1',
     apiKeyEnv: 'VLLM_API_KEY',
     keyOptional: true,
+    // You run it, so tokens cost nothing — the cost meter must not price
+    // these at a hosted vendor's rate.
+    selfHosted: true,
     models: {},
     modelHint: 'use the --model id the server was started with',
     docs: 'https://docs.vllm.ai',
@@ -170,6 +176,9 @@ export const PROVIDERS = {
     baseUrl: 'http://localhost:1234/v1',
     apiKeyEnv: 'LMSTUDIO_API_KEY',
     keyOptional: true,
+    // You run it, so tokens cost nothing — the cost meter must not price
+    // these at a hosted vendor's rate.
+    selfHosted: true,
     models: {},
     modelHint: 'copy the model id from the LM Studio server tab',
     docs: 'https://lmstudio.ai',
@@ -180,6 +189,9 @@ export const PROVIDERS = {
     baseUrl: 'http://localhost:8080/v1',
     apiKeyEnv: 'LLAMACPP_API_KEY',
     keyOptional: true,
+    // You run it, so tokens cost nothing — the cost meter must not price
+    // these at a hosted vendor's rate.
+    selfHosted: true,
     models: {},
     modelHint: 'llama.cpp accepts any model id; it serves whatever was loaded',
     docs: 'https://github.com/ggml-org/llama.cpp',
@@ -190,6 +202,9 @@ export const PROVIDERS = {
     baseUrl: 'http://localhost:8080/v1',
     apiKeyEnv: 'LOCALAI_API_KEY',
     keyOptional: true,
+    // You run it, so tokens cost nothing — the cost meter must not price
+    // these at a hosted vendor's rate.
+    selfHosted: true,
     models: {},
     docs: 'https://localai.io',
   },

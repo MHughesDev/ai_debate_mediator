@@ -78,7 +78,7 @@ export function createUniversalLlm({
     });
 
     if (sessionId && usage) {
-      recordLlmUsage(sessionId, model, usage.input, usage.output).catch(() => {});
+      recordLlmUsage(sessionId, model, usage.input, usage.output, { free: !!spec.selfHosted }).catch(() => {});
     }
     if (refused) return null;
     if (data === null) {

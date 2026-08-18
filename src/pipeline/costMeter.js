@@ -6,6 +6,12 @@ import { config } from '../config.js';
 
 const costsKey = (id) => `sess:${id}:costs`;
 
+async function setField(sessionId, field, value) {
+  const store = await getStore();
+  await store.hset(costsKey(sessionId), field, String(value));
+  await store.expire(costsKey(sessionId), config.sessionTtlSec);
+}
+
 async function incrField(sessionId, field, amount) {
   if (!amount) return;
   const store = await getStore();
@@ -14,10 +20,13 @@ async function incrField(sessionId, field, amount) {
   await store.expire(costsKey(sessionId), config.sessionTtlSec);
 }
 
-export async function recordLlmUsage(sessionId, model, inputTokens, outputTokens) {
+export async function recordLlmUsage(sessionId, model, inputTokens, outputTokens, { free = false } = {}) {
   await incrField(sessionId, `llm_in:${model}`, inputTokens || 0);
   await incrField(sessionId, `llm_out:${model}`, outputTokens || 0);
   await incrField(sessionId, 'llm_calls', 1);
+  // Recorded alongside the counters rather than held in memory, so the estimate
+  // is still right when it is recomputed from the database after a restart.
+  if (free) await setField(sessionId, `llm_free:${model}`, 1);
 }
 
 export async function recordSearch(sessionId, calls = 1) {
@@ -62,8 +71,16 @@ export function estimateCost(counters) {
   usd += ((counters.stt_seconds || 0) / 3600) * r.sttHour;
   usd += (counters.search_calls || 0) * r.searchCall;
   for (const [k, v] of Object.entries(counters)) {
-    if (k.startsWith('llm_in:')) usd += (v / 1e6) * (r.llmIn[k.slice(7)] ?? r.llmIn['claude-opus-5']);
-    if (k.startsWith('llm_out:')) usd += (v / 1e6) * (r.llmOut[k.slice(8)] ?? r.llmOut['claude-opus-5']);
+    const model = k.startsWith('llm_in:') ? k.slice(7) : k.startsWith('llm_out:') ? k.slice(8) : null;
+    if (!model) continue;
+    // A model you host yourself costs nothing per token. Without this a local
+    // run reports a bill it will never receive, since an unpriced model id
+    // otherwise falls back to the most expensive rate we know.
+    if (counters[`llm_free:${model}`]) continue;
+    const table = k.startsWith('llm_in:') ? r.llmIn : r.llmOut;
+    // An unknown HOSTED model still falls back to the dearest known rate: an
+    // overestimate is the safe direction for a bill.
+    usd += (v / 1e6) * (table[model] ?? table['claude-opus-5']);
   }
   return Math.round(usd * 10000) / 10000;
 }
