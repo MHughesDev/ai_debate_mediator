@@ -57,12 +57,30 @@ Adding env vars switches the same code paths from mocks to real vendors (selecti
 |---|---|
 | `RECALL_API_KEY` (+ `PUBLIC_BASE_URL`) | Real meeting bot via Recall.ai (ADR-0001) |
 | `ASSEMBLYAI_API_KEY` | Streaming STT (ADR-0004; `DEEPGRAM_API_KEY` stays swappable) |
-| `ANTHROPIC_API_KEY` | Claim extraction (Haiku), judging/scoring/receipts (Opus) |
+| any one LLM key *or* a local model | Claim extraction, judging, scoring, receipts — see below |
 | `BRAVE_API_KEY` | Full web coverage for search — free tier, recommended (see below) |
 | `DATABASE_URL` | Neon Postgres persistence (ADR-0003) |
 | `REDIS_URL` | Upstash Redis hot state / queues / pub-sub (ADR-0003) |
 
 Step-by-step deployment (Render now, Cloud Run cutover later): [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+## LLM: one switch, any backend
+
+The vendor is a config value, not a code path ([ADR-0007](docs/decisions/0007-universal-llm-provider-layer.md)). `LLM_PROVIDER` selects it; leave it unset and the first key present is used automatically.
+
+**Hosted** — `anthropic`, `openai`, `google`, `azure`, `groq`, `together`, `fireworks`, `openrouter`, `deepseek`, `mistral`, `xai`, `cerebras`.
+
+**Your own model**, on your laptop or in the same cloud the app runs in — no API key, no per-token cost, and no transcript leaving your infrastructure:
+
+```bash
+LLM_PROVIDER=ollama LLM_MODEL=llama3.3 npm start
+```
+
+`vllm`, `lmstudio`, `llamacpp`, `localai` work the same way, and `custom` plus `LLM_BASE_URL` points at anything else that speaks the OpenAI dialect — a gateway, a proxy, a remote GPU box.
+
+Under the hood there are only three request dialects, because nearly every vendor speaks OpenAI's. Prompts and schemas are shared, so a prompt improvement applies to every backend at once. Structured output is **negotiated rather than assumed** — `json_schema`, then `json_object`, then plain prompting with JSON recovered from the reply — because a self-hosted server is exactly where schema support is likely to be partial. Misconfiguration throws at startup naming the variable to fix, and `/healthz` reports the live provider, dialect, endpoint and resolved models.
+
+> **Subscriptions do not work for this.** ChatGPT Plus and Claude Pro/Max are separate products from the APIs and expose no endpoint an app can call. Use pay-as-you-go API billing, a free tier (Groq, Gemini), or self-host.
 
 ## Search: our own retrieval layer
 

@@ -21,8 +21,16 @@ export function createApp() {
   // Health includes search backend state because that is what degrades silently:
   // an open circuit breaker means a backend is being skipped and verdicts are
   // running on thinner evidence, which is invisible from the transcript alone.
-  app.get('/healthz', (_req, res) => {
+  app.get('/healthz', async (_req, res) => {
     const health = { ok: true, uptime: process.uptime() };
+    try {
+      const { getLlmProvider } = await import('./providers/llm/index.js');
+      const llm = getLlmProvider();
+      health.llm = llm.describe ? llm.describe() : { provider: llm.kind };
+    } catch (err) {
+      // A misconfigured provider must be visible here, not only at first use.
+      health.llm = { provider: 'unavailable', error: err.message.slice(0, 200) };
+    }
     try {
       const provider = getSearchProvider();
       health.search = {

@@ -1,8 +1,8 @@
 // Deadline-aware rate limiter for quota-capped backends.
 //
-// Brave's free tier allows ~1 query/second. We verify several claims
-// concurrently, each planning multiple queries, so naive parallelism earns
-// nothing but 429s. Two properties matter:
+// Paced so a burst of concurrent claims cannot spike a vendor's rate ceiling,
+// and so a metered backend spends its allowance deliberately rather than as
+// fast as claims arrive. Two properties matter:
 //
 //   1. Slots are reserved SYNCHRONOUSLY, so concurrent callers can never claim
 //      the same instant — the reservation happens before any await.

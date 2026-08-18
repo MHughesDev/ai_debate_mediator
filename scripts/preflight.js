@@ -35,23 +35,24 @@ async function check(name, key, fn) {
 async function main() {
   console.log('\nPreflight — validating configured vendors\n');
 
-  await check('Anthropic', config.anthropicApiKey, async () => {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': config.anthropicApiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config.extractorModel,
-        max_tokens: 16,
-        messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
-      }),
+  // Whichever backend LLM_PROVIDER selected — one check for all of them.
+  // This exercises the real path: auth, the resolved model id, and structured
+  // output, which is where self-hosted servers usually differ.
+  await check('LLM', config.llmProvider !== 'mock' ? config.llmProvider : '', async () => {
+    const { getLlmProvider } = await import('../src/providers/llm/index.js');
+    const llm = getLlmProvider();
+    const info = llm.describe();
+    const out = await llm.extractClaims({
+      motion: 'This house believes preflight checks are worth writing',
+      speakers: ['Preflight'],
+      chunkText: 'Preflight: global electric vehicle sales tripled between 2020 and 2023.',
+      priorClaims: [],
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 120)}`);
-    const data = await res.json();
-    return `${config.extractorModel} responded`;
+    if (!out || !Array.isArray(out.claims)) throw new Error('structured output did not come back as an object');
+    // Zero claims would mean the transport worked but the model ignored the
+    // schema — worth flagging, since every downstream task depends on it.
+    const shape = out.claims.length ? `${out.claims.length} claim(s) extracted` : 'responded but extracted nothing';
+    return `${info.label} [${info.dialect}] ${info.models.extractor} -> ${shape}`;
   });
 
   await check('Tavily search', config.tavilyApiKey, async () => {

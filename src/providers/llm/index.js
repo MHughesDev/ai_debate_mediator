@@ -1,20 +1,18 @@
 // LlmProvider interface — task-level so the mock can be heuristic:
 //   extractClaims({ motion, speakers, chunkText, priorClaims }) ->
 //     { claims: [{ text, speaker, type, checkable, links }], fallacies: [{ speaker, label, detail, confidence }] }
-//   judgeClaim({ claim, results }) ->
+//   judgeClaim({ claim, results, motion }) ->
 //     { verdict, confidence, evidence_summary, sources: [{name,url}] }
 //   generateReceipts({ motion, stats }) -> { winner?, most_accurate?, ...narrative fields }
+//
+// Every real backend is built from one code path (ADR-0007): the vendor is a
+// registry entry plus one of three request dialects, selected by LLM_PROVIDER.
+// The mock stays separate because it is heuristic rather than a transport.
 import { config } from '../../config.js';
-import { createAnthropicLlm } from './anthropic.js';
+import { createUniversalLlm } from './universal.js';
 import { createMockLlm } from './mock.js';
 
 export function getLlmProvider() {
-  switch (config.llmProvider) {
-    case 'anthropic':
-      return createAnthropicLlm();
-    case 'mock':
-      return createMockLlm();
-    default:
-      throw new Error(`unknown LLM_PROVIDER: ${config.llmProvider}`);
-  }
+  if (config.llmProvider === 'mock') return createMockLlm();
+  return createUniversalLlm();
 }

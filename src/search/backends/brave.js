@@ -2,10 +2,12 @@
 // API with a free tier, and returns publication dates, which our recency
 // scoring uses. Primary general-web backend when a key is present.
 //
-// The free tier is rate-limited to ~1 query/second, so this backend is metered
-// (see rateLimiter.js) and gets a small per-claim query allowance: it receives
-// the single most important query while keyless backends take the rest. That
-// keeps a debate inside quota instead of collecting 429s mid-verdict.
+// Brave has no free plan: a subscription is required to issue a key at all, and
+// the Search plan bills per request against $5 of monthly credit. Rate is not
+// the constraint (50 req/sec); SPEND is. So this backend is metered (see
+// rateLimiter.js) and gets a small per-claim query allowance: it receives the
+// single most important query while keyless backends take the rest. That keeps
+// a debate inside the monthly credit rather than running up a bill.
 import { createRateLimiter, QuotaSkip } from '../rateLimiter.js';
 
 const ENDPOINT = 'https://api.search.brave.com/res/v1/web/search';

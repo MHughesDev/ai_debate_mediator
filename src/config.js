@@ -1,4 +1,6 @@
 // Env-var-only configuration (design contract #5). Every knob lives here.
+import { resolveProviderId } from './providers/llm/registry.js';
+
 const env = process.env;
 
 const int = (v, d) => (v !== undefined && v !== '' ? parseInt(v, 10) : d);
@@ -20,7 +22,9 @@ export const config = {
   // Our own search layer (ADR-0006) is the default: it needs no API key
   // (Wikipedia/Wikidata) and improves as backends are configured.
   searchProvider: env.SEARCH_PROVIDER || (env.TAVILY_API_KEY ? 'tavily' : env.EXA_API_KEY ? 'exa' : 'own'),
-  llmProvider: env.LLM_PROVIDER || (env.ANTHROPIC_API_KEY ? 'anthropic' : 'mock'),
+  // One global switch across every LLM backend (ADR-0007). Explicit
+  // LLM_PROVIDER wins; otherwise the first vendor whose key is present.
+  llmProvider: resolveProviderId(env),
 
   // Vendor credentials
   recallApiKey: env.RECALL_API_KEY || '',
@@ -34,10 +38,12 @@ export const config = {
   // ---- Own search engine (ADR-0006) ----
   // Backends: Wikipedia needs no key; the rest activate when configured.
   braveApiKey: env.BRAVE_API_KEY || '',
-  // Brave's free tier is ~1 query/sec and ~2k queries/month. We meter to that
-  // rather than collecting 429s, and cap how many of a claim's planned queries
-  // may spend quota (see rateLimiter.js). Paid tiers: raise BRAVE_QPS.
-  braveQps: num(env.BRAVE_QPS, 1),
+  // Brave's Search plan allows 50 requests/sec, so pacing is not the binding
+  // constraint — spend is. The plan bills $5 per 1,000 requests against $5 of
+  // monthly credit, so the budget is roughly 1,000 requests/month. We stay well
+  // under the rate ceiling and cap how many of a claim's planned queries may
+  // spend credit (see rateLimiter.js).
+  braveQps: num(env.BRAVE_QPS, 20),
   braveMaxQueries: int(env.BRAVE_MAX_QUERIES, 1),
   googleCseKey: env.GOOGLE_CSE_KEY || '',
   googleCseCx: env.GOOGLE_CSE_CX || '',
@@ -62,11 +68,17 @@ export const config = {
     env.SEARCH_USER_AGENT ||
     'AIDebateMediatorBot/1.0 (+https://github.com/MHughesDev/ai_debate_mediator)',
 
-  // Models (SPEC: extraction is a fast Haiku-class loop; judging/scoring on Opus)
-  extractorModel: env.EXTRACTOR_MODEL || 'claude-haiku-4-5',
-  judgeModel: env.JUDGE_MODEL || 'claude-opus-5',
-  scorerModel: env.SCORER_MODEL || 'claude-opus-5',
-  receiptsModel: env.RECEIPTS_MODEL || 'claude-opus-5',
+  // Models are resolved per provider in src/providers/llm/registry.js:
+  // EXTRACTOR_MODEL / JUDGE_MODEL / SCORER_MODEL / RECEIPTS_MODEL override the
+  // provider's defaults. Extraction is the fast, cheap loop; judging, scoring
+  // and receipts decide what goes on screen and use the strong model.
+
+  // Point any provider at a different endpoint: a self-hosted server, a
+  // gateway, an Azure deployment, a proxy.
+  llmBaseUrl: env.LLM_BASE_URL || '',
+  // Works for every provider, so an unusual setup does not need us to know its
+  // vendor-specific variable name.
+  llmApiKey: env.LLM_API_KEY || '',
 
   // Pipeline tunables (latency budgets in SPEC §3.1)
   extractIntervalMs: int(env.EXTRACT_INTERVAL_MS, 5000),

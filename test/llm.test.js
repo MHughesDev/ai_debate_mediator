@@ -1,0 +1,331 @@
+// Universal LLM layer (ADR-0007).
+//
+// A local HTTP server impersonates each vendor, so every dialect, the
+// structured-output negotiation and the error paths are exercised for real —
+// actual requests, headers and bodies — without a single API key.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import { resolveProviderId, resolveModel, getProviderSpec, PROVIDERS } from '../src/providers/llm/registry.js';
+import { createUniversalLlm } from '../src/providers/llm/universal.js';
+import { extractJson } from '../src/providers/llm/dialects/json.js';
+import { toGeminiSchema } from '../src/providers/llm/dialects/gemini.js';
+
+const VERDICT = { verdict: 'TRUE', confidence: 0.9, evidence_summary: 'Supported.', sources: [] };
+
+// A stand-in for every vendor at once, routed by path.
+//   opts.reject: Set of response_format types this server refuses (400)
+async function startFakeLlm(opts = {}) {
+  const reject = opts.reject || new Set();
+  const requests = [];
+
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      const parsed = body ? JSON.parse(body) : {};
+      requests.push({ url: req.url, headers: req.headers, body: parsed });
+
+      const send = (code, obj) => {
+        res.writeHead(code, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(obj));
+      };
+
+      if (req.url.includes('/chat/completions')) {
+        const kind = parsed.response_format?.type || 'none';
+        if (reject.has(kind)) return send(400, { error: { message: `${kind} not supported` } });
+        if (opts.status) return send(opts.status, { error: { message: 'nope' } });
+        return send(200, {
+          choices: [{ message: { content: opts.content ?? JSON.stringify(VERDICT) }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 11, completion_tokens: 7 },
+        });
+      }
+
+      if (req.url.includes('/v1/messages')) {
+        if (opts.status) return send(opts.status, { error: { message: 'nope' } });
+        if (opts.refuse) return send(200, { stop_reason: 'refusal', content: [], usage: { input_tokens: 3, output_tokens: 0 } });
+        return send(200, {
+          content: [{ type: 'text', text: opts.content ?? JSON.stringify(VERDICT) }],
+          usage: { input_tokens: 12, output_tokens: 5 },
+        });
+      }
+
+      if (req.url.includes(':generateContent')) {
+        return send(200, {
+          candidates: [{ content: { parts: [{ text: opts.content ?? JSON.stringify(VERDICT) }] }, finishReason: 'STOP' }],
+          usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 4 },
+        });
+      }
+      send(404, { error: 'unknown path' });
+    });
+  });
+
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address();
+  return {
+    requests,
+    base: `http://127.0.0.1:${port}`,
+    close: () => new Promise((r) => server.close(r)),
+  };
+}
+
+const CLAIM = { speaker: 'Alex', text: 'EV sales tripled between 2020 and 2023.' };
+
+// --------------------------------------------------------------- registry
+
+test('provider selection: explicit wins, otherwise the key present decides', () => {
+  assert.equal(resolveProviderId({ LLM_PROVIDER: 'ollama' }), 'ollama');
+  assert.equal(resolveProviderId({ LLM_PROVIDER: 'OpenAI' }), 'openai', 'case and spacing tolerated');
+  assert.equal(resolveProviderId({ OPENAI_API_KEY: 'sk-x' }), 'openai');
+  assert.equal(resolveProviderId({ GROQ_API_KEY: 'gsk' }), 'groq');
+  // Anthropic outranks the rest when several keys are present.
+  assert.equal(resolveProviderId({ OPENAI_API_KEY: 'sk-x', ANTHROPIC_API_KEY: 'sk-a' }), 'anthropic');
+  // A local server is never auto-selected: we cannot tell if one is running,
+  // and silently failing to reach localhost is worse than an honest mock.
+  assert.equal(resolveProviderId({}), 'mock');
+});
+
+test('model resolution: per-task env beats the provider default', () => {
+  const openai = getProviderSpec('openai');
+  assert.equal(resolveModel(openai, 'extractor', {}), 'gpt-4.1-mini', 'fast model for the extraction loop');
+  assert.equal(resolveModel(openai, 'judge', {}), 'gpt-4.1', 'strong model for what reaches the screen');
+  assert.equal(resolveModel(openai, 'judge', { JUDGE_MODEL: 'o3' }), 'o3');
+  // Self-hosted providers have no defaults — we cannot know what is loaded.
+  assert.equal(resolveModel(getProviderSpec('ollama'), 'judge', {}), '');
+  assert.equal(resolveModel(getProviderSpec('ollama'), 'judge', { JUDGE_MODEL: 'qwen2.5' }), 'qwen2.5');
+});
+
+test('every registry entry can actually be built', () => {
+  for (const [id, spec] of Object.entries(PROVIDERS)) {
+    if (id === 'mock') continue;
+    assert.ok(spec.label, `${id} has a label`);
+    assert.ok(['openai', 'anthropic', 'gemini'].includes(spec.dialect), `${id} uses a known dialect`);
+    assert.ok(spec.baseUrl || spec.requiresBaseUrl, `${id} has an endpoint or demands one`);
+  }
+});
+
+// ------------------------------------------------------- misconfiguration
+
+test('misconfiguration fails at startup with an actionable message', () => {
+  assert.throws(
+    () => createUniversalLlm({ providerId: 'openai', env: {} }),
+    /OPENAI_API_KEY/,
+    'names the variable to set',
+  );
+  assert.throws(
+    () => createUniversalLlm({ providerId: 'custom', env: {} }),
+    /LLM_BASE_URL/,
+    'an endpoint-less provider says so',
+  );
+  assert.throws(
+    () => createUniversalLlm({ providerId: 'ollama', env: {}, baseUrl: 'http://localhost:11434/v1' }),
+    /LLM_MODEL/,
+    'a local server needs to be told which model it is serving',
+  );
+  assert.throws(() => createUniversalLlm({ providerId: 'nope', env: {} }), /unknown LLM_PROVIDER/);
+});
+
+// -------------------------------------------------------------- dialects
+
+test('openai dialect: real request shape, parsed result, usage counted', async (t) => {
+  const fake = await startFakeLlm();
+  t.after(() => fake.close());
+
+  const llm = createUniversalLlm({
+    providerId: 'openai',
+    env: { OPENAI_API_KEY: 'sk-test' },
+    baseUrl: `${fake.base}/v1`,
+  });
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results: [], motion: 'Motion' });
+  assert.deepEqual(verdict, VERDICT);
+
+  const req = fake.requests.at(-1);
+  assert.equal(req.headers.authorization, 'Bearer sk-test');
+  assert.equal(req.body.model, 'gpt-4.1', 'judging uses the strong model');
+  assert.equal(req.body.response_format.type, 'json_schema', 'schema enforcement preferred');
+  assert.match(req.body.messages[1].content, /EV sales tripled/);
+  assert.match(req.body.messages[1].content, /Motion/, 'the motion reaches the judge here too');
+});
+
+test('azure authenticates with its own header', async (t) => {
+  const fake = await startFakeLlm();
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'azure',
+    env: { AZURE_OPENAI_API_KEY: 'az-key', LLM_MODEL: 'my-deployment' },
+    baseUrl: `${fake.base}/openai/deployments/my-deployment`,
+  });
+  await llm.judgeClaim({ claim: CLAIM, results: [] });
+  const req = fake.requests.at(-1);
+  assert.equal(req.headers['api-key'], 'az-key');
+  assert.equal(req.headers.authorization, undefined, 'no bearer token for Azure');
+});
+
+test('anthropic dialect speaks the messages API', async (t) => {
+  const fake = await startFakeLlm();
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'anthropic',
+    env: { ANTHROPIC_API_KEY: 'sk-ant' },
+    baseUrl: fake.base,
+  });
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results: [] });
+  assert.deepEqual(verdict, VERDICT);
+  const req = fake.requests.at(-1);
+  assert.equal(req.headers['x-api-key'], 'sk-ant');
+  assert.equal(req.headers['anthropic-version'], '2023-06-01');
+  assert.equal(req.body.output_config.format.type, 'json_schema');
+});
+
+test('anthropic refusal degrades to the safe verdict, never a guess', async (t) => {
+  const fake = await startFakeLlm({ refuse: true });
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'anthropic',
+    env: { ANTHROPIC_API_KEY: 'sk-ant' },
+    baseUrl: fake.base,
+  });
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results: [] });
+  assert.equal(verdict.verdict, 'UNVERIFIABLE');
+  assert.equal(verdict.confidence, 0);
+});
+
+test('gemini dialect posts generateContent with a schema it accepts', async (t) => {
+  const fake = await startFakeLlm();
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'google',
+    env: { GEMINI_API_KEY: 'g-key' },
+    baseUrl: fake.base,
+  });
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results: [] });
+  assert.deepEqual(verdict, VERDICT);
+  const req = fake.requests.at(-1);
+  assert.match(req.url, /models\/gemini-1\.5-pro:generateContent\?key=g-key/);
+  assert.equal(req.body.generationConfig.responseMimeType, 'application/json');
+  assert.equal(
+    JSON.stringify(req.body.generationConfig.responseSchema).includes('additionalProperties'),
+    false,
+    'Gemini rejects additionalProperties, so it is stripped rather than sent',
+  );
+});
+
+test('gemini schema translation keeps meaning, drops what it cannot parse', () => {
+  const out = toGeminiSchema({
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      items: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { a: { type: 'string' } } } },
+      verdict: { type: 'string', enum: ['TRUE', 'FALSE'] },
+    },
+    required: ['verdict'],
+  });
+  assert.equal(out.additionalProperties, undefined);
+  assert.equal(out.properties.items.items.additionalProperties, undefined, 'stripped at every depth');
+  assert.deepEqual(out.properties.verdict.enum, ['TRUE', 'FALSE'], 'constraints that survive are kept');
+  assert.deepEqual(out.required, ['verdict']);
+});
+
+// -------------------------------------------- structured output negotiation
+
+test('a server without schema support is negotiated down, not abandoned', async (t) => {
+  // Typical of a local llama.cpp or older Ollama build: it knows json_object
+  // but not json_schema.
+  const fake = await startFakeLlm({ reject: new Set(['json_schema']) });
+  t.after(() => fake.close());
+
+  const llm = createUniversalLlm({
+    providerId: 'llamacpp',
+    env: { LLM_MODEL: 'local-model' },
+    baseUrl: `${fake.base}/v1`,
+  });
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results: [] });
+  assert.deepEqual(verdict, VERDICT, 'still produced a usable verdict');
+
+  const kinds = fake.requests.map((r) => r.body.response_format?.type);
+  assert.deepEqual(kinds, ['json_schema', 'json_object'], 'tried the best mode first, then stepped down');
+  // The shape has to be stated in the prompt once the schema is not enforced.
+  assert.match(fake.requests.at(-1).body.messages[0].content, /JSON Schema/);
+
+  // The working mode is remembered: a second call must not re-pay the failure.
+  const before = fake.requests.length;
+  await llm.judgeClaim({ claim: CLAIM, results: [] });
+  assert.equal(fake.requests.length - before, 1, 'one request, no repeated negotiation');
+});
+
+test('a server supporting neither still works, via plain prompting', async (t) => {
+  const fake = await startFakeLlm({
+    reject: new Set(['json_schema', 'json_object']),
+    // ...and it wraps the answer in a markdown fence, as small models do.
+    content: 'Sure! Here is the JSON:\n```json\n' + JSON.stringify(VERDICT) + '\n```',
+  });
+  t.after(() => fake.close());
+
+  const llm = createUniversalLlm({
+    providerId: 'custom',
+    env: { LLM_API_KEY: '', LLM_MODEL: 'm' },
+    baseUrl: `${fake.base}/v1`,
+  });
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results: [] });
+  assert.deepEqual(verdict, VERDICT, 'recovered from a fenced, prose-prefixed reply');
+  assert.equal(fake.requests.length, 3, 'json_schema -> json_object -> plain');
+});
+
+test('auth and rate-limit failures are never mistaken for missing features', async (t) => {
+  const fake = await startFakeLlm({ status: 401 });
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'openai',
+    env: { OPENAI_API_KEY: 'sk-bad' },
+    baseUrl: `${fake.base}/v1`,
+  });
+  // A bad key must surface as a bad key. Degrading the request shape would
+  // retry three times and then report the wrong problem.
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results: [] }).catch((err) => err);
+  assert.ok(verdict instanceof Error, 'the failure propagates for the caller to handle');
+  assert.match(verdict.message, /401/);
+  assert.equal(fake.requests.length, 1, 'no pointless downgrade attempts');
+});
+
+test('unusable output degrades to the safe result rather than crashing', async (t) => {
+  const fake = await startFakeLlm({ content: 'I would rather write a poem about electric cars.' });
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'openai',
+    env: { OPENAI_API_KEY: 'sk-test' },
+    baseUrl: `${fake.base}/v1`,
+  });
+  const verdict = await llm.judgeClaim({ claim: CLAIM, results: [] });
+  assert.equal(verdict.verdict, 'UNVERIFIABLE');
+  const extracted = await llm.extractClaims({ speakers: ['A'], chunkText: 'hello' });
+  assert.deepEqual(extracted, { claims: [], fallacies: [] }, 'extraction falls back to empty, not undefined');
+});
+
+test('describe() reports exactly what is running', async (t) => {
+  const fake = await startFakeLlm();
+  t.after(() => fake.close());
+  const llm = createUniversalLlm({
+    providerId: 'groq',
+    env: { GROQ_API_KEY: 'gsk', JUDGE_MODEL: 'llama-3.3-70b-versatile' },
+    baseUrl: `${fake.base}/v1`,
+  });
+  const info = llm.describe();
+  assert.equal(info.provider, 'groq');
+  assert.equal(info.dialect, 'openai');
+  assert.equal(info.keyed, true);
+  assert.equal(info.models.judge, 'llama-3.3-70b-versatile');
+});
+
+// ------------------------------------------------------------ json recovery
+
+test('JSON is recovered from whatever a small model wraps it in', () => {
+  assert.deepEqual(extractJson('{"a":1}'), { a: 1 });
+  assert.deepEqual(extractJson('```json\n{"a":1}\n```'), { a: 1 });
+  assert.deepEqual(extractJson('Here you go:\n{"a":1}\nHope that helps!'), { a: 1 });
+  // Braces inside strings must not end the object early.
+  assert.deepEqual(extractJson('prose {"a":"}{","b":2} trailing'), { a: '}{', b: 2 });
+  assert.deepEqual(extractJson('escaped {"a":"say \\"hi\\" }","b":3}'), { a: 'say "hi" }', b: 3 });
+  assert.equal(extractJson('no json at all'), null);
+  assert.equal(extractJson(''), null);
+  assert.equal(extractJson(null), null);
+});
