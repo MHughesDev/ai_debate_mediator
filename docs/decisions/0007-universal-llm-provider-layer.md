@@ -144,3 +144,34 @@ Three rules keep the routing from surprising anyone:
 
 `/healthz` reports the per-task routing, because "which model judged this claim"
 is the first question worth asking when a verdict looks wrong.
+
+### Measured: why routing is necessary, not merely convenient
+
+Benchmarked on the development machine (GTX 1080 Ti, ~11 GB VRAM, 31 GB RAM),
+warm timings unless noted:
+
+| Model | Extraction | Judging | Verdict quality |
+|---|---|---|---|
+| `qwen2.5:7b-instruct` (4.7 GB) | 1.7 s | 4 s | **Never returns FALSE** with cited sources; the gate downgrades to UNVERIFIED |
+| `qwen2.5-coder:14b` (9 GB) | 12 s | 7–15 s | **Correct FALSE**, confidence 1.0, sources cited |
+| `qwen2.5-coder:32b` (19 GB) | — | — | Never loaded; exceeds VRAM and stalls on CPU |
+| 7B + 14B together | **294 s per swap** | — | Unworkable: one is evicted to load the other |
+
+Two conclusions follow, and neither is about software quality:
+
+1. **Two local models on one GPU is not a configuration.** Every alternation
+   pays a full model load. Where VRAM cannot hold both, routing must send one
+   task off-box rather than to a second local model.
+2. **A model big enough to judge is too slow to extract.** Extraction ticks
+   every 5 s; at 12 s per call the 14B runs back-to-back and saturates the GPU,
+   leaving judging to queue behind it and blow the 8–20 s verdict budget. The 7B
+   extracts in 1.7 s — roughly a third duty cycle, with headroom to spare — but
+   cannot clear the FALSE bar.
+
+So on constrained hardware the working configuration is **local extraction plus
+hosted judging**: the 720 cheap calls stay free and local, the 40 expensive ones
+go where the quality is, and the two never contend for the same GPU. That is
+precisely what per-task routing buys, and it is the reason it exists.
+
+On a machine with enough VRAM for a strong model, `LLM_MODEL` alone is still the
+simplest correct answer.
