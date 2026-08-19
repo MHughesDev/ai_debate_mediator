@@ -653,3 +653,63 @@ test('results from a vendor that forbids caching get a short TTL', async (t) => 
   await open.search('Great Wall seen from orbit myth', { maxResults: 3 });
   assert.equal(ttls.at(-1), 21600, 'unrestricted vendors keep the long TTL');
 });
+
+// ---------------------------------------------- resilience under our own load
+
+test('a timeout does not disable a healthy backend, but real errors do', async () => {
+  const { createBreaker } = await import('../src/search/backends/index.js');
+  const breaker = createBreaker({ failureThreshold: 3, softFailureThreshold: 8, cooldownMs: 60000 });
+
+  // Timeouts are usually OUR fault (CPU contention), so they must take far more
+  // evidence before we stop calling a vendor.
+  for (let i = 0; i < 7; i++) breaker.failure('exa', { soft: true });
+  assert.equal(breaker.allow('exa'), true, 'still calling exa after 7 timeouts');
+  breaker.failure('exa', { soft: true });
+  assert.equal(breaker.allow('exa'), false, 'opens once timeouts are clearly systemic');
+
+  // A hard failure (auth rejected, 5xx) is real evidence the vendor is broken.
+  for (let i = 0; i < 3; i++) breaker.failure('brave');
+  assert.equal(breaker.allow('brave'), false, 'opens quickly on real errors');
+});
+
+test('retrieval retries once with a wider timeout when every backend times out', async (t) => {
+  _resetStoreForTests(createMemoryStore());
+  _clearMemoryCache();
+  t.after(() => _resetStoreForTests(null));
+
+  const attempts = [];
+  // Slow enough to blow the first (narrow) timeout, fast enough for the retry.
+  const slowBackend = {
+    name: 'slow',
+    enabled: true,
+    async search(q, { signal } = {}) {
+      const attempt = attempts.length + 1;
+      attempts.push(attempt);
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, 95);
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          const err = new Error('aborted');
+          err.name = 'AbortError';
+          reject(err);
+        }, { once: true });
+      });
+      return [{ title: 'Recovered source', url: 'https://example.gov/report', snippet: 'NASA confirms the wall is not visible from the Moon at that distance.' }];
+    },
+  };
+
+  const engine = createSearchEngine({
+    config: {
+      ...config,
+      searchBackendTimeoutMs: 70, // first pass (70ms) aborts; retry (140ms) succeeds
+      searchRetrieveMs: 400,
+      searchDeadlineMs: 3000,
+      searchFetchDeadlineMs: 200,
+    },
+    backends: [slowBackend],
+  });
+
+  const results = await engine.search('The Great Wall of China is visible from the Moon.', { maxResults: 3 });
+  assert.ok(attempts.length >= 2, `retried after total failure (attempts: ${attempts.length})`);
+  assert.ok(results.length > 0, 'recovered evidence instead of forcing UNVERIFIED');
+});

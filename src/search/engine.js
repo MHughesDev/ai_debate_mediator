@@ -25,7 +25,7 @@ export function createSearchEngine({ config, backends: injectedBackends, fetchIm
   const backends = injectedBackends || buildBackends(config);
   const breaker = createBreaker({ cooldownMs: config.searchBreakerCooldownMs });
 
-  async function retrieve(plan, deadlineAt) {
+  async function retrieve(plan, deadlineAt, { timeoutFactor = 1 } = {}) {
     const jobs = [];
     for (const backend of backends) {
       if (!breaker.allow(backend.name)) continue;
@@ -40,7 +40,8 @@ export function createSearchEngine({ config, backends: injectedBackends, fetchIm
             const remaining = deadlineAt - Date.now();
             if (remaining <= 30) return null;
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), Math.min(remaining, config.searchBackendTimeoutMs));
+            const budget = Math.min(remaining, config.searchBackendTimeoutMs * timeoutFactor);
+            const timer = setTimeout(() => controller.abort(), budget);
             try {
               const results = await backend.search(q, { limit: 8, signal: controller.signal, deadlineAt });
               breaker.success(backend.name);
@@ -54,8 +55,15 @@ export function createSearchEngine({ config, backends: injectedBackends, fetchIm
                 logger.debug('search backend skipped', { backend: backend.name, reason: err.message });
                 return null;
               }
-              breaker.failure(backend.name);
-              logger.debug('search backend failed', { backend: backend.name, error: err.message });
+              // A timeout usually means we were busy, not that the vendor is
+              // down — extraction, verification and search share this process.
+              const timedOut = err.name === 'AbortError' || /abort|timeout/i.test(err.message);
+              breaker.failure(backend.name, { soft: timedOut });
+              logger.debug('search backend failed', {
+                backend: backend.name,
+                error: err.message,
+                soft: timedOut,
+              });
               return null;
             } finally {
               clearTimeout(timer);
@@ -87,7 +95,23 @@ export function createSearchEngine({ config, backends: injectedBackends, fetchIm
     const deadlineAt = started + config.searchDeadlineMs;
 
     // 1. Federated retrieval.
-    const lists = await retrieve(plan, started + config.searchRetrieveMs);
+    let lists = await retrieve(plan, started + config.searchRetrieveMs);
+
+    // Losing EVERY backend is the one failure that silently guts the product:
+    // no evidence means the judge must return UNVERIFIED for this claim, so a
+    // few seconds of CPU contention would quietly stop the fact-checker
+    // contradicting anyone. It is nearly always a timeout under our own load
+    // (extraction and verification share this process), so retry once with a
+    // wider timeout while the deadline still allows it.
+    if (lists.length === 0 && deadlineAt - Date.now() > config.searchBackendTimeoutMs) {
+      logger.warn('retrieval returned nothing, retrying with a wider timeout', {
+        backends: backends.map((b) => b.name),
+      });
+      lists = await retrieve(plan, Math.min(deadlineAt, Date.now() + config.searchBackendTimeoutMs * 2), {
+        timeoutFactor: 2,
+      });
+    }
+
     if (lists.length === 0) {
       logger.warn('no search backend returned results', { backends: backends.map((b) => b.name) });
       return [];

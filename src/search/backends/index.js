@@ -32,22 +32,32 @@ export function buildBackends(config) {
 // Simple per-backend circuit breaker: after repeated failures stop calling a
 // backend for a cool-off window so one dead vendor cannot eat the deadline on
 // every single claim.
-export function createBreaker({ failureThreshold = 3, cooldownMs = 60000 } = {}) {
-  const state = new Map(); // name -> {failures, openUntil}
+export function createBreaker({ failureThreshold = 3, softFailureThreshold = 8, cooldownMs = 60000 } = {}) {
+  const state = new Map(); // name -> {failures, softFailures, openUntil}
   return {
     allow(name) {
       const s = state.get(name);
       return !s || !s.openUntil || Date.now() >= s.openUntil;
     },
     success(name) {
-      state.set(name, { failures: 0, openUntil: 0 });
+      state.set(name, { failures: 0, softFailures: 0, openUntil: 0 });
     },
-    failure(name) {
-      const s = state.get(name) || { failures: 0, openUntil: 0 };
-      s.failures += 1;
-      if (s.failures >= failureThreshold) {
+    /**
+     * @param {string} name
+     * @param {{soft?: boolean}} opts soft = a timeout/abort, which usually means
+     *   WE were busy (extraction and verification share this box), not that the
+     *   vendor is down. Tripping the breaker on those disables a healthy backend
+     *   for the whole cooldown and degrades every claim behind it, so soft
+     *   failures need far more evidence before opening the circuit.
+     */
+    failure(name, { soft = false } = {}) {
+      const s = state.get(name) || { failures: 0, softFailures: 0, openUntil: 0 };
+      if (soft) s.softFailures = (s.softFailures || 0) + 1;
+      else s.failures += 1;
+      if (s.failures >= failureThreshold || (s.softFailures || 0) >= softFailureThreshold) {
         s.openUntil = Date.now() + cooldownMs;
         s.failures = 0;
+        s.softFailures = 0;
       }
       state.set(name, s);
     },
